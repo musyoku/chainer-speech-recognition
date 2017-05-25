@@ -52,7 +52,7 @@ def load_audio_and_transcription(wav_paths, transcription_paths):
 				print("{} をスキップしました（読み込みできません）".format(wav_filename))
 				continue
 
-			print("{} を読み込み中 ... shape={}, rate={}, min={}".format(wav_filename, audio.shape, sampling_rate, int(audio.size / sampling_rate / 60)))
+			print("loading {} ... shape={}, rate={}, min={}".format(wav_filename, audio.shape, sampling_rate, int(audio.size / sampling_rate / 60)))
 
 			# 転記の読み込み
 			batch = []
