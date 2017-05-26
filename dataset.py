@@ -2,12 +2,39 @@
 from __future__ import division
 from __future__ import print_function
 import os, codecs, re, sys
+import chainer
 import numpy as np
 import scipy.io.wavfile as wavfile
 from python_speech_features import logfbank
 from python_speech_features import fbank
 
-def extract_features(signal, nfft=512, winlen=0.032, winstep=0.01, nfilt=40, winfunc=lambda x:np.hanning(x)):
+def get_minibatch(bucket, dataset, batchsize):
+	assert len(bucket) >= batchsize
+	config = chainer.config
+	indices = bucket[:batchsize]
+	max_width = 0
+
+	for idx in indices:
+		data = dataset[idx]
+		signal, sentence, logmel, delta, delta_delta = data
+		if logmel is None:
+			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filter)
+			dataset[idx] = signal, sentence, logmel, delta, delta_delta
+		if logmel.shape[1] > max_width:
+			max_width = logmel.shape[1]
+
+	batch = np.zeros((batchsize, 3, config.num_mel_filter, max_width), dtype=np.float32)
+
+	for batch_idx, data_idx in enumerate(indices):
+		data = dataset[data_idx]
+		signal, sentence, logmel, delta, delta_delta = data
+		batch[batch_idx, 0, :, -logmel.shape[1]:] = logmel
+		batch[batch_idx, 1, :, -delta.shape[1]:] = delta
+		batch[batch_idx, 2, :, -delta_delta.shape[1]:] = delta_delta
+
+	return batch
+
+def extract_features(signal, sampling_rate=16000, nfft=512, winlen=0.032, winstep=0.01, nfilt=40, winfunc=lambda x:np.hanning(x)):
 	# メルフィルタバンク出力の対数を計算
 	logmel, energy = fbank(signal, sampling_rate, nfft=nfft, winlen=winlen, winstep=winstep, nfilt=nfilt, winfunc=winfunc)
 	logmel = np.log(logmel)
@@ -22,7 +49,7 @@ def extract_features(signal, nfft=512, winlen=0.032, winstep=0.01, nfilt=40, win
 	delta = delta[:-2]
 	delta_delta = delta_delta[:-2]
 
-	return logmel, delta, delta_delta
+	return logmel.T, delta.T, delta_delta.T
 
 def load_audio_and_transcription(wav_paths, transcription_paths):
 	assert len(wav_paths) > 0
