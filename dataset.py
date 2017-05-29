@@ -8,6 +8,44 @@ import scipy.io.wavfile as wavfile
 from python_speech_features import logfbank
 from python_speech_features import fbank
 
+def get_vocab():
+	characters = [
+		u"あ",u"い",u"う",u"え",u"お",
+		u"か",u"き",u"く",u"け",u"こ",
+		u"さ",u"し",u"す",u"せ",u"そ",
+		u"た",u"ち",u"つ",u"て",u"と",
+		u"な",u"に",u"ぬ",u"ね",u"の",
+		u"は",u"ひ",u"ふ",u"へ",u"ほ",
+		u"ま",u"み",u"む",u"め",u"も",
+		u"や",u"ゆ",u"よ",
+		u"ら",u"り",u"る",u"れ",u"ろ",
+		u"わ",u"を",u"ん",
+		u"が",u"ぎ",u"ぐ",u"げ",u"ご",
+		u"ざ",u"じ",u"ず",u"ぜ",u"ぞ",
+		u"だ",u"ぢ",u"づ",u"で",u"ど",
+		u"ば",u"び",u"ぶ",u"べ",u"ぼ",
+		u"ぱ",u"ぴ",u"ぷ",u"ぺ",u"ぽ",
+		u"ぁ",u"ぃ",u"ぅ",u"ぇ",u"ぉ",
+		u"ゃ",u"ゅ",u"ょ",
+		u"っ",
+		u"ー",
+		u"_",	# blank
+		u"@",	# padding
+	]
+
+	vocab = {}
+	for char in characters:
+		vocab[char] = len(vocab)
+
+	vocab_inv = {}
+	for char, char_id in vocab.items():
+		vocab_inv[char_id] = char
+
+	id_pad = len(characters) - 1
+	id_blank = len(characters) - 2
+
+	return vocab, vocab_inv, id_pad, id_blank
+
 def get_minibatch(bucket, dataset, batchsize):
 	assert len(bucket) >= batchsize
 	config = chainer.config
@@ -55,6 +93,7 @@ def load_audio_and_transcription(wav_paths, transcription_paths):
 	assert len(wav_paths) > 0
 	assert len(transcription_paths) > 0
 
+	vocab = get_vocab()[0]
 	dataset = []
 
 	for wav_dir, trn_dir in zip(wav_paths, transcription_paths):
@@ -109,23 +148,32 @@ def load_audio_and_transcription(wav_paths, transcription_paths):
 						else:
 							raise Exception()
 
-					batch.append((signal, sentence))
+					# 文字IDに変換
+					char_id_sequence = []
+					sentence = sentence.strip()
+					for char in sentence:
+						if char not in vocab:
+							continue
+						char_id = vocab[char]
+						char_id_sequence.append(char_id)
+
+					batch.append((signal, char_id_sequence))
 
 			# 信号長と転記文字列長の不自然な部分を検出
 			num_points_per_character = 0	# 1文字あたりの信号の数
-			for signal, sentence in batch:
-				num_points_per_character += len(signal) / len(sentence)
+			for signal, char_id_sequence in batch:
+				num_points_per_character += len(signal) / len(char_id_sequence)
 			num_points_per_character /= len(signal)
 
 			accept_rate = 0.4	# ズレの割合がこれ以下なら教師データに誤りが含まれている可能性があるので目視で確認すべき
 			if trn_filename == "M03F0017.trn":	# CSJのこのファイルだけ異常な早口がある
 				accept_rate = 0.05
-			for idx, (signal, sentence) in enumerate(batch):
-				error = abs(len(signal) - num_points_per_character * len(sentence))
+			for idx, (signal, char_id_sequence) in enumerate(batch):
+				error = abs(len(signal) - num_points_per_character * len(char_id_sequence))
 				rate = error / len(signal)
 				if rate < accept_rate:
-					raise Exception(len(signal), len(sentence), num_points_per_character, rate, trn_filename, idx + 1)
+					raise Exception(len(signal), len(char_id_sequence), num_points_per_character, rate, trn_filename, idx + 1)
 
-				dataset.append((signal, sentence))
+				dataset.append((signal, char_id_sequence))
 
 	return dataset

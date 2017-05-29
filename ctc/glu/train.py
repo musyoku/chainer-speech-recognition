@@ -6,13 +6,16 @@ import sys, argparse, time
 import chainer
 import numpy as np
 sys.path.append("../../")
-from dataset import load_audio_and_transcription, get_minibatch
-from model import RNNModel, load_model, save_model
+from dataset import load_audio_and_transcription, get_minibatch, get_vocab
+from model import ZhangModel, load_model, save_model
 
 class stdout:
 	BOLD = "\033[1m"
 	END = "\033[0m"
 	CLEAR = "\033[2K"
+
+def print_bold(str):
+	print(stdout.BOLD + str + stdout.END)
 
 # バケットのインデックスを計算
 def get_bucket_index(signal):
@@ -43,11 +46,15 @@ def main(args):
 	chainer.global_config.batchsize = batchsize
 	chainer.global_config.num_fft = num_fft
 	chainer.global_config.num_mel_filters = num_mel_filters
-	chainer.config.window_func = lambda x:np.hanning(x)
-	chainer.config.using_delta = True
-	chainer.config.using_delta_delta = True
+	chainer.global_config.window_func = lambda x:np.hanning(x)
+	chainer.global_config.using_delta = True
+	chainer.global_config.using_delta_delta = True
 
 	pair = load_audio_and_transcription(wav_paths, transcription_paths)
+	vocab, vocab_inv, ID_PAD, ID_BLANK = get_vocab()
+	print_bold("data	#")
+	print("wav	{}".format(len(pair)))
+	print("vocab	{}".format(len(vocab)))
 
 	dataset = []
 	max_bucket_index = 0	# バケットの最大個数
@@ -69,7 +76,7 @@ def main(args):
 
 	bucketset = []
 	min_num_data = 0
-	print("bucket	#data	sec")
+	print_bold("bucket	#data	sec")
 	for idx, bucket in enumerate(tmp_buckets):
 		if bucket is None:
 			continue
@@ -97,6 +104,22 @@ def main(args):
 		bucketset[idx] = bucket
 	max_epoch = 2
 
+	# モデル
+	model = load_model(args.model_dir)
+	if model is None:
+		model = ZhangModel(vocab_size, args.ndim_embedding, args.num_blocks, args.num_layers_per_block, ndim_h=args.ndim_h, kernel_size=args.kernel_size, dropout=args.dropout, weightnorm=args.weightnorm, wgain=args.wgain, ignore_label=ID_PAD)
+	if args.gpu_device >= 0:
+		chainer.cuda.get_device(args.gpu_device).use()
+		model.to_gpu()
+
+	# optimizer
+	optimizer = get_optimizer(args.optimizer, args.learning_rate, args.momentum)
+	optimizer.setup(model)
+	optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
+	optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
+	final_learning_rate = 1e-4
+	total_time = 0
+
 	running_mean = 0
 	running_var = 0
 	running_z = 0
@@ -117,8 +140,8 @@ def main(args):
 				# 本来は学習前にデータ全体の平均・分散を計算すべきだが、データ拡大を用いるため、逐一更新していくことにする
 				mean_x_batch = np.mean(x_batch, axis=(0, 3)).reshape((1, feature_dim, -1, 1))
 				var_x_batch = np.var(x_batch, axis=(0, 3)).reshape((1, feature_dim, -1, 1))
-				running_mean = running_mean * (running_z / (running_z + 1)) + mean_x_batch / (running_z + 1)
-				running_var = running_var * (running_z / (running_z + 1)) + var_x_batch / (running_z + 1)
+				running_mean = running_mean * (running_z / (running_z + 1)) + mean_x_batch / (running_z + 1)	# 正規化定数が+1されることに注意
+				running_var = running_var * (running_z / (running_z + 1)) + var_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
 				running_z += 1
 
 				# 正規化

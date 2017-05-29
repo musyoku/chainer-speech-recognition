@@ -7,16 +7,16 @@ import chainer
 from chainer import cuda, Variable, function, link, functions, links, initializers
 from chainer.utils import type_check
 from chainer.links import EmbedID, Linear, BatchNormalization
-from convolution_1d import Convolution1D
+from convolution_2d import Convolution2D
 
 class GLU(link.Chain):
-	def __init__(self, in_channels, out_channels, kernel_size=2, wgain=1., weightnorm=False):
+	def __init__(self, in_channels, out_channels, kernel_size=(3, 5), wgain=1., weightnorm=False):
 		if weightnorm:
 			wstd = 0.05
-			W = Convolution1D(in_channels, 2 * out_channels, kernel_size, stride=1, pad=kernel_size - 1, initialV=initializers.HeNormal(wstd))
+			W = Convolution2D(in_channels, 2 * out_channels, kernel_size, stride=1, pad=kernel_size - 1, initialV=initializers.HeNormal(wstd))
 		else:
-			wstd = math.sqrt(wgain / in_channels / kernel_size)
-			W = links.ConvolutionND(1, in_channels, 2 * out_channels, kernel_size, stride=1, pad=kernel_size - 1, initialW=initializers.HeNormal(wstd))
+			wstd = math.sqrt(wgain / in_channels / kernel_size[0] / kernel_size[1])
+			W = links.Convolution2D(1, in_channels, 2 * out_channels, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.HeNormal(wstd))
 
 		super(GLU, self).__init__(W=W)
 		self._in_channels, self._out_channels, self._kernel_size, = in_channels, out_channels, kernel_size
@@ -32,7 +32,7 @@ class GLU(link.Chain):
 		# |< t1 >|
 		#     |< t2 >|
 		#         |< t3 >|
-		pad = self._kernel_size - 1
+		pad = self._kernel_size[1] - 1
 		WX = self.W(X)[:, :, :-pad]
 
 		A, B = functions.split_axis(WX, 2, axis=1)
@@ -40,7 +40,7 @@ class GLU(link.Chain):
 		return self.H
 
 	def forward_one_step(self, X):
-		pad = self._kernel_size - 1
+		pad = self._kernel_size[1] - 1
 		wx = self.W(X)[:, :, -pad-1, None]
 		a, b = functions.split_axis(wx, 2, axis=1)
 		h = a * functions.sigmoid(b)

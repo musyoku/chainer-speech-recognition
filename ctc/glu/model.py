@@ -45,7 +45,7 @@ def load_model(dirname):
 			except Exception as e:
 				raise Exception("could not load {}".format(param_filename))
 
-		qrnn = RNNModel(**params)
+		qrnn = ZhangModel(**params)
 
 		if os.path.isfile(model_filename):
 			print("loading {} ...".format(model_filename))
@@ -54,19 +54,21 @@ def load_model(dirname):
 		return qrnn
 	else:
 		return None
-
-class RNNModel(Chain):
-	def __init__(self, vocab_size, ndim_embedding, num_blocks, num_layers_per_block, ndim_h, kernel_size=4, dropout=0, weightnorm=False, wgain=1, ignore_label=None):
-		super(RNNModel, self).__init__(
-			dense=L.Linear(ndim_h, vocab_size),
+# Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
+# https://arxiv.org/abs/1701.02720
+class ZhangModel(Chain):
+	def __init__(self, vocab_size, num_blocks, num_layers_per_block, num_fc_layers, ndim_features, ndim_h, kernel_size=4, dropout=0, weightnorm=False, wgain=1, ignore_label=None):
+		super(ZhangModel, self).__init__(
+			output_fc=L.Linear(ndim_h, vocab_size),
 		)
 		assert num_blocks > 0
 		assert num_layers_per_block > 0
 		self.vocab_size = vocab_size
-		self.ndim_embedding = ndim_embedding
 		self.num_blocks = num_blocks
 		self.num_layers_per_block = num_layers_per_block
+		self.num_fc_layers = num_fc_layers
 		self.ndim_h = ndim_h
+		self.ndim_features = ndim_features
 		self.kernel_size = kernel_size
 		self.weightnorm = weightnorm
 		self.dropout = dropout
@@ -74,43 +76,63 @@ class RNNModel(Chain):
 		self.wgain = wgain
 		self.ignore_label = ignore_label
 
-		self.add_link("glu0", L.GLU(ndim_embedding, ndim_h, kernel_size=kernel_size, wgain=wgain, weightnorm=weightnorm))
-		for i in xrange(1, num_blocks * num_layers_per_block):
+		self.add_link("input_conv", L.GLU(ndim_features, ndim_h, kernel_size=kernel_size, wgain=wgain, weightnorm=weightnorm))
+		for i in xrange(num_blocks * num_layers_per_block):
 			self.add_link("glu{}".format(i), L.GLU(ndim_h, ndim_h, kernel_size=kernel_size, wgain=wgain, weightnorm=weightnorm))
+		for i in xrange(num_fc_layers):
+			self.add_link("fc{}".format(i), L.Linear(ndim_h, ndim_h))
 
 	def get_glu_layer(self, index):
 		return getattr(self, "glu{}".format(index))
+
+	def get_fc_layer(self, index):
+		return getattr(self, "fc{}".format(index))
 
 	def reset_state(self):
 		for i in xrange(self.num_blocks * self.num_layers_per_block):
 			self.get_glu_layer(i).reset_state()
 
-	def _forward_layer(self, layer_index, in_data):
+	def _forward_glu_layer(self, layer_index, in_data):
 		glu = self.get_glu_layer(layer_index)
 		out_data = glu(in_data)
+		return out_data
+
+	def _forward_fc_layer(self, layer_index, in_data):
+		fc = self.get_fc_layer(layer_index)
+		out_data = fc(in_data)
 		return out_data
 
 	def __call__(self, X, return_last=False):
 		batchsize = X.shape[0]
 		seq_length = X.shape[1]
-		enmbedding = self.embed(X)
-		enmbedding = F.swapaxes(enmbedding, 1, 2)
-		residual_input = enmbedding if self.ndim_h == self.ndim_embedding else 0
 
-		out_data = self._forward_layer(0, enmbedding)
-		for layer_index in xrange(1, self.num_blocks * self.num_layers_per_block):
-			out_data = self._forward_layer(layer_index, out_data)
+		# first layer
+		out_data = self.input_conv(X)
+		out_data = F.relu(out_data)
+		out_data = F.max_pooling_2d(out_data, ksize=(3, 1))
+		residual_input = out_data
+
+		# GLU layers
+		for layer_index in xrange(self.num_blocks * self.num_layers_per_block):
+			out_data = self._forward_glu_layer(layer_index, out_data)
 			if (layer_index + 1) % self.num_layers_per_block == 0:
 				if self.using_dropout:
 					out_data = F.dropout(out_data, ratio=self.dropout)
 				out_data += residual_input
 				residual_input = out_data
 
+		# fully-connected layers
+		for layer_index in xrange(self.num_fc_layers):
+			out_data = self._forward_fc_layer(layer_index, out_data)
+			out_data = self.relu(out_data)
+			if self.using_dropout:
+				out_data = F.dropout(out_data, ratio=self.dropout)
+
 		if return_last:
 			out_data = out_data[:, :, -1, None]
 
 		out_data = F.reshape(F.swapaxes(out_data, 1, 2), (-1, self.ndim_h))
-		Y = self.dense(out_data)
+		Y = self.output_fc(out_data)
 
 		return Y
 
@@ -144,6 +166,6 @@ class RNNModel(Chain):
 
 		out_data = out_data[:, :, -1, None]
 		out_data = F.reshape(F.swapaxes(out_data, 1, 2), (-1, self.ndim_h))
-		Y = self.dense(out_data)
+		Y = self.output_fc(out_data)
 
 		return Y
