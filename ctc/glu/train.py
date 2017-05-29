@@ -162,7 +162,7 @@ def main(args):
 			with chainer.using_config("train", True):
 				bucket_idx = int(np.random.choice(np.arange(len(bucketset)), size=1, p=buckets_distribution))
 				bucket = bucketset[bucket_idx]
-				x_batch = get_minibatch(bucket, dataset, args.batchsize, ID_PAD)
+				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize, ID_PAD)
 				feature_dim = x_batch.shape[1]
 
 				# 平均と分散を計算
@@ -179,12 +179,18 @@ def main(args):
 				# GPU
 				if model.xp is cuda.cupy:
 					x_batch = cuda.to_gpu(x_batch)
+					t_batch = cuda.to_gpu(np.asarray(t_batch).astype(np.int32))
+					x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
+					t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
 				# 誤差の計算
-				y_batch = model(x_batch)
-				loss = 0
-				for y in y_batch:
-					loss += F.connectionist_temporal_classification(y_batch, )
+				y_batch = model(x_batch)	# list of variables
+				loss = F.connectionist_temporal_classification(y_batch, t_batch, x_length_batch, t_length_batch)
+
+				# 更新
+				model.cleargrads()
+				loss.backward()
+				optimizer.update()
 
 				sys.stdout.write("\r" + stdout.CLEAR)
 				sys.stdout.write("\riteration {}/{}".format(itr, total_iterations))
