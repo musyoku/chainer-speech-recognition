@@ -157,8 +157,10 @@ def main(args):
 	for epoch in xrange(1, max_epoch + 1):
 		print("Epoch", epoch)
 		start_time = time.time()
+		sum_loss = 0
 		
 		for itr in xrange(1, total_iterations + 1):
+
 			with chainer.using_config("debug", True):
 				bucket_idx = int(np.random.choice(np.arange(len(bucketset)), size=1, p=buckets_distribution))
 				bucket = bucketset[bucket_idx]
@@ -192,18 +194,23 @@ def main(args):
 				loss.backward()
 				optimizer.update()
 
-				sys.stdout.write("\r" + stdout.CLEAR)
-				sys.stdout.write("\riteration {}/{}".format(itr, total_iterations))
-				sys.stdout.flush()
-
 				bucketset[bucket_idx] = np.roll(bucket, args.batchsize)	# ずらす
-
-			# 再シャッフル
-			for bucket in bucketset:
-				np.random.shuffle(bucket)
+				sum_loss += float(loss.data)
 
 			sys.stdout.write("\r" + stdout.CLEAR)
+			sys.stdout.write("\riteration {}/{}".format(itr, total_iterations))
 			sys.stdout.flush()
+
+		# 再シャッフル
+		for bucket in bucketset:
+			np.random.shuffle(bucket)
+
+		sys.stdout.write("\r" + stdout.CLEAR)
+		sys.stdout.flush()
+
+		elapsed_time = time.time() - start_time
+		print("done in {} min, loss=".format(elapsed_time, sum_loss / total_iterations))
+		total_time += elapsed_time
 
 
 if __name__ == "__main__":
