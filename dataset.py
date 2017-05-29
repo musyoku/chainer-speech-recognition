@@ -46,11 +46,12 @@ def get_vocab():
 
 	return vocab, vocab_inv, id_pad, id_blank
 
-def get_minibatch(bucket, dataset, batchsize):
+def get_minibatch(bucket, dataset, batchsize, id_pad):
 	assert len(bucket) >= batchsize
 	config = chainer.config
 	indices = bucket[:batchsize]
-	max_width = 0
+	max_x_width = 0
+	max_t_width = 0
 
 	for idx in indices:
 		data = dataset[idx]
@@ -58,19 +59,32 @@ def get_minibatch(bucket, dataset, batchsize):
 		if logmel is None:
 			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
 			dataset[idx] = signal, sentence, logmel, delta, delta_delta
-		if logmel.shape[1] > max_width:
-			max_width = logmel.shape[1]
+		if len(sentence) > max_t_width:
+			max_t_width = len(sentence)
+		if logmel.shape[1] > max_x_width:
+			max_x_width = logmel.shape[1]
 
-	batch = np.zeros((batchsize, 3, config.num_mel_filters, max_width), dtype=np.float32)
+	x_batch = np.zeros((batchsize, 3, config.num_mel_filters, max_x_width), dtype=np.float32)
+	t_batch = np.full((batchsize, max_t_width), id_pad, dtype=np.int32)
+	x_valid_length = []
+	t_valid_length = []
 
 	for batch_idx, data_idx in enumerate(indices):
 		data = dataset[data_idx]
 		signal, sentence, logmel, delta, delta_delta = data
-		batch[batch_idx, 0, :, -logmel.shape[1]:] = logmel
-		batch[batch_idx, 1, :, -delta.shape[1]:] = delta
-		batch[batch_idx, 2, :, -delta_delta.shape[1]:] = delta_delta
 
-	return batch
+		# x
+		x_batch[batch_idx, 0, :, -logmel.shape[1]:] = logmel
+		x_batch[batch_idx, 1, :, -delta.shape[1]:] = delta
+		x_batch[batch_idx, 2, :, -delta_delta.shape[1]:] = delta_delta
+		x_valid_length.append(logmel.shape[1])
+
+		# t
+		for pos, char_id in enumerate(sentence):
+			t_batch[batch_idx, pos] = char_id
+		t_valid_length.append(len(sentence))
+
+	return x_batch, x_valid_length, t_batch, t_valid_length
 
 def extract_features(signal, sampling_rate=16000, num_fft=512, frame_width=0.032, frame_shift=0.01, num_mel_filters=40, window_func=lambda x:np.hanning(x), using_delta=True, using_delta_delta=True):
 	# メルフィルタバンク出力の対数を計算

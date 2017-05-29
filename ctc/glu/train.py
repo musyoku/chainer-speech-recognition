@@ -185,7 +185,7 @@ def main(args):
 
 				# 誤差の計算
 				y_batch = model(x_batch)	# list of variables
-				loss = F.connectionist_temporal_classification(y_batch, t_batch, x_length_batch, t_length_batch)
+				loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
 				# 更新
 				model.cleargrads()
