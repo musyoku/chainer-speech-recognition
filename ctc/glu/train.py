@@ -159,7 +159,7 @@ def main(args):
 		start_time = time.time()
 		
 		for itr in xrange(1, total_iterations + 1):
-			with chainer.using_config("train", True):
+			with chainer.using_config("debug", True):
 				bucket_idx = int(np.random.choice(np.arange(len(bucketset)), size=1, p=buckets_distribution))
 				bucket = bucketset[bucket_idx]
 				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize, ID_PAD)
@@ -234,4 +234,5 @@ if __name__ == "__main__":
 	parser.add_argument("--train-filename", "-train", default=None)
 	parser.add_argument("--dev-filename", "-dev", default=None)
 	args = parser.parse_args()
+
 	main(args)

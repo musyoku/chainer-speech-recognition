@@ -114,7 +114,6 @@ class ZhangModel(Chain):
 		return out_data
 
 	def __call__(self, X, return_last=False):
-		X = X[:3, :, :, :2]
 		batchsize = X.shape[0]
 		seq_length = X.shape[3]
 
@@ -149,7 +148,8 @@ class ZhangModel(Chain):
 				out_data = F.dropout(out_data, ratio=self.dropout)
 
 		out_data = self._forward_fc_layer(self.num_fc_layers - 1, out_data)
-		out_data = F.split_axis(out_data, batchsize, axis=0)
+		out_data = F.reshape(out_data, (batchsize, -1))
+		out_data = F.split_axis(out_data, seq_length, axis=1)
 
 		return out_data
 
