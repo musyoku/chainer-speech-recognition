@@ -5,6 +5,8 @@ from six.moves import xrange
 import sys, argparse, time
 import chainer
 import numpy as np
+import chainer.functions as F
+from chainer import optimizers, cuda
 sys.path.append("../../")
 from dataset import load_audio_and_transcription, get_minibatch, get_vocab
 from model import ZhangModel, load_model, save_model
@@ -21,13 +23,40 @@ def print_bold(str):
 def get_bucket_index(signal):
 	return len(signal) // 512 // 16
 
+def get_current_learning_rate(opt):
+	if isinstance(opt, optimizers.NesterovAG):
+		return opt.lr
+	if isinstance(opt, optimizers.Adam):
+		return opt.alpha
+	raise NotImplementationError()
+
+def get_optimizer(name, lr, momentum):
+	if name == "nesterov":
+		return optimizers.NesterovAG(lr=lr, momentum=momentum)
+	if name == "adam":
+		return optimizers.Adam(alpha=lr, beta1=momentum)
+	raise NotImplementationError()
+
+def decay_learning_rate(opt, factor, final_value):
+	if isinstance(opt, optimizers.NesterovAG):
+		if opt.lr <= final_value:
+			return
+		opt.lr *= factor
+		return
+	if isinstance(opt, optimizers.Adam):
+		if opt.alpha <= final_value:
+			return
+		opt.alpha *= factor
+		return
+	raise NotImplementationError()
+
 def main(args):
 	wav_paths = [
-		"/home/aibo/sandbox/CSJ/WAV/core/",
+		"/home/stark/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/aibo/sandbox/CSJ_/core/",
+		"/home/stark/sandbox/CSJ_/core/",
 	]
 
 	np.random.seed(0)
@@ -35,7 +64,6 @@ def main(args):
 	sampling_rate = 16000
 	frame_width = 0.032		# 秒
 	frame_shift = 0.01		# 秒
-	batchsize = 32
 	gpu_ids = [0, 1, 3]		# 複数GPUを使う場合
 	num_fft = int(sampling_rate * frame_width)
 	num_mel_filters = 40
@@ -43,7 +71,6 @@ def main(args):
 	chainer.global_config.sampling_rate = sampling_rate
 	chainer.global_config.frame_width = frame_width
 	chainer.global_config.frame_shift = frame_shift
-	chainer.global_config.batchsize = batchsize
 	chainer.global_config.num_fft = num_fft
 	chainer.global_config.num_mel_filters = num_mel_filters
 	chainer.global_config.window_func = lambda x:np.hanning(x)
@@ -52,6 +79,7 @@ def main(args):
 
 	pair = load_audio_and_transcription(wav_paths, transcription_paths)
 	vocab, vocab_inv, ID_PAD, ID_BLANK = get_vocab()
+	vocab_size = len(vocab)
 	print_bold("data	#")
 	print("wav	{}".format(len(pair)))
 	print("vocab	{}".format(len(vocab)))
@@ -80,7 +108,9 @@ def main(args):
 	for idx, bucket in enumerate(tmp_buckets):
 		if bucket is None:
 			continue
-		if len(bucket) < batchsize:	# ミニバッチサイズより少ない場合はスキップ
+		if len(bucket) < args.batchsize:	# ミニバッチサイズより少ない場合はスキップ
+			continue
+		if args.buckets_slice is not None and idx > args.buckets_slice:
 			continue
 		print("{}	{:>5}	{:>6.3f}".format(idx + 1, len(bucket), (idx + 1) * 512 * 16 / sampling_rate))
 		bucketset.append(bucket)
@@ -107,7 +137,7 @@ def main(args):
 	# モデル
 	model = load_model(args.model_dir)
 	if model is None:
-		model = ZhangModel(vocab_size, args.ndim_embedding, args.num_blocks, args.num_layers_per_block, ndim_h=args.ndim_h, kernel_size=args.kernel_size, dropout=args.dropout, weightnorm=args.weightnorm, wgain=args.wgain, ignore_label=ID_PAD)
+		model = ZhangModel(vocab_size, args.num_blocks, args.num_layers_per_block, args.num_fc_layers, args.ndim_audio_features, args.ndim_h, dropout=args.dropout, weightnorm=args.weightnorm, wgain=args.wgain, ignore_label=ID_PAD)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu()
@@ -124,16 +154,15 @@ def main(args):
 	running_var = 0
 	running_z = 0
 
-	for epoch in xrange(max_epoch):
+	for epoch in xrange(1, max_epoch + 1):
 		print("Epoch", epoch)
 		start_time = time.time()
 		
-		with chainer.using_config("train", True):
-		
-			for itr in xrange(1, total_iterations + 1):
+		for itr in xrange(1, total_iterations + 1):
+			with chainer.using_config("train", True):
 				bucket_idx = int(np.random.choice(np.arange(len(bucketset)), size=1, p=buckets_distribution))
 				bucket = bucketset[bucket_idx]
-				x_batch = get_minibatch(bucket, dataset, batchsize)
+				x_batch = get_minibatch(bucket, dataset, args.batchsize, ID_PAD)
 				feature_dim = x_batch.shape[1]
 
 				# 平均と分散を計算
@@ -147,11 +176,21 @@ def main(args):
 				# 正規化
 				x_batch = (x_batch - running_mean) / running_var
 
+				# GPU
+				if model.xp is cuda.cupy:
+					x_batch = cuda.to_gpu(x_batch)
+
+				# 誤差の計算
+				y_batch = model(x_batch)
+				loss = 0
+				for y in y_batch:
+					loss += F.connectionist_temporal_classification(y_batch, )
+
 				sys.stdout.write("\r" + stdout.CLEAR)
 				sys.stdout.write("\riteration {}/{}".format(itr, total_iterations))
 				sys.stdout.flush()
 
-				bucketset[bucket_idx] = np.roll(bucket, batchsize)	# ずらす
+				bucketset[bucket_idx] = np.roll(bucket, args.batchsize)	# ずらす
 
 			# 再シャッフル
 			for bucket in bucketset:
@@ -163,7 +202,30 @@ def main(args):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--batchsize", "-b", type=int, default=24)
-	parser.add_argument("--model-dir", "-model", type=str, default="model")
+	parser.add_argument("--batchsize", "-b", type=int, default=8)
+	parser.add_argument("--epoch", "-e", type=int, default=1000)
+	parser.add_argument("--grad-clip", "-gc", type=float, default=1) 
+	parser.add_argument("--weight-decay", "-wd", type=float, default=2e-5) 
+	parser.add_argument("--learning-rate", "-lr", type=float, default=0.1)
+	parser.add_argument("--lr-decay", "-decay", type=float, default=0.95)
+	parser.add_argument("--momentum", "-mo", type=float, default=0.99)
+	parser.add_argument("--optimizer", "-opt", type=str, default="nesterov")
+	
+	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
+	parser.add_argument("--ndim-h", "-nh", type=int, default=640)
+	parser.add_argument("--num-layers-per-block", "-layers", type=int, default=2)
+	parser.add_argument("--num-blocks", "-blocks", type=int, default=1)
+	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
+	parser.add_argument("--wgain", "-w", type=float, default=1)
+
+	parser.add_argument("--dropout", "-dropout", type=float, default=0)
+	parser.add_argument("--weightnorm", "-weightnorm", default=False, action="store_true")
+	
+	parser.add_argument("--gpu-device", "-g", type=int, default=0) 
+	parser.add_argument("--interval", type=int, default=100)
+	parser.add_argument("--buckets-slice", type=int, default=None)
+	parser.add_argument("--model-dir", "-m", type=str, default="model")
+	parser.add_argument("--train-filename", "-train", default=None)
+	parser.add_argument("--dev-filename", "-dev", default=None)
 	args = parser.parse_args()
 	main(args)
