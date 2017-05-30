@@ -1,3 +1,4 @@
+# coding: utf-8
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
@@ -77,21 +78,31 @@ class ZhangModel(Chain):
 		self.wgain = wgain
 		self.ignore_label = ignore_label
 
+		num_layers = 0
+
 		wstd = math.sqrt(wgain / ndim_features / kernel_size[0] / kernel_size[1])
 		if weightnorm:
-			input_conv = L.WeightnormConvolution2D(ndim_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialV=initializers.HeNormal(wstd))
+			input_conv = L.WeightnormConvolution2D(ndim_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialV=initializers.Normal(wstd))
 		else:
-			input_conv = L.Convolution2D(ndim_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.HeNormal(wstd))
+			input_conv = L.Convolution2D(ndim_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd))
 
 		self.add_link("input_conv", input_conv)
+		num_layers += 1
 
 		for i in xrange(num_blocks * num_layers_per_block):
 			self.add_link("glu{}".format(i), L.GLU(ndim_h, ndim_h, kernel_size=kernel_size, wgain=wgain, weightnorm=weightnorm))
+			num_layers += 1
 
 		for i in xrange(num_fc_layers - 1):
 			self.add_link("fc{}".format(i), L.Linear(None, 512))
+			num_layers += 1
 		self.add_link("fc{}".format(num_fc_layers - 1), L.Linear(None, vocab_size))
+		num_layers += 1
 
+		# batch normalization
+		self.running_mean = [None] * num_layers
+		self.running_stddev = [None] * num_layers
+		self.running_z = None
 
 	def get_glu_layer(self, index):
 		return getattr(self, "glu{}".format(index))
@@ -113,25 +124,87 @@ class ZhangModel(Chain):
 		out_data = fc(in_data)
 		return out_data
 
+	def normalize_layer(self, out_data, global_layer_index):
+		xp = self.xp
+		eps = 1e-4
+		seq_length = out_data.shape[3]
+
+		mean_batch = xp.mean(out_data.data, axis=0)[None, ...]
+		stddev_batch = xp.std(out_data.data, axis=0)[None, ...] + eps
+
+		running_mean, running_stddev, z = self.running_mean[global_layer_index], self.running_stddev[global_layer_index], self.running_z
+
+		if z is None:
+			z = xp.zeros((seq_length,), dtype=xp.float32).reshape((1, 1, 1, -1))
+			self.running_z = z
+		if running_mean is None:
+			running_mean = xp.zeros((seq_length,), dtype=xp.float32).reshape((1, 1, 1, -1))
+			self.running_mean[global_layer_index] = running_mean
+		if running_stddev is None:
+			running_stddev = xp.zeros((seq_length,), dtype=xp.float32).reshape((1, 1, 1, -1))
+			self.running_stddev[global_layer_index] = running_stddev
+
+		if seq_length > z.size:
+			diff = seq_length - z.size
+			z = xp.concatenate((z, xp.zeros((diff,), dtype=xp.float32).reshape(1, 1, 1, -1)), axis=3)
+			self.running_z = z
+		if seq_length > running_mean.size:
+			diff = seq_length - running_mean.size
+			running_mean = xp.concatenate((running_mean, xp.zeros((diff,), dtype=xp.float32).reshape(1, 1, 1, -1)), axis=3)
+			self.running_mean[global_layer_index] = running_mean
+		if seq_length > running_stddev.size:
+			diff = seq_length - running_stddev.size
+			running_stddev = xp.concatenate((running_stddev, xp.zeros((diff,), dtype=xp.float32).reshape(1, 1, 1, -1)), axis=3)
+			self.running_stddev[global_layer_index] = running_stddev
+
+		if seq_length < z.size:
+			z = z[..., :seq_length]
+			running_mean = running_mean[..., :seq_length]
+			running_stddev = running_stddev[..., :seq_length]
+
+		# print(running_mean.shape)
+		# print(mean_batch.shape)
+		# print(running_stddev.shape)
+		# print(stddev_batch.shape)
+		# print(z.shape)
+
+		running_mean = running_mean * (z / (z + 1)) + mean_batch / (z + 1)			# 正規化定数が+1されることに注意
+		running_stddev = running_stddev * (z / (z + 1)) + stddev_batch / (z + 1)	# 正規化定数が+1されることに注意
+
+		out_data = (out_data - running_mean) / running_stddev
+
+		self.running_mean[global_layer_index][..., :seq_length] = running_mean
+		self.running_stddev[global_layer_index][..., :seq_length] = running_stddev
+
+		return out_data
+
 	def __call__(self, X, return_last=False):
 		batchsize = X.shape[0]
 		seq_length = X.shape[3]
 
-		# first layer
+		global_layer_index = 0
+
+		### First Layer ###
 		pad = self.kernel_size[1] - 1
 		out_data = self.input_conv(X)[..., :-pad]
 		out_data = F.relu(out_data)
 		out_data = F.max_pooling_2d(out_data, ksize=(3, 1))
+		out_data = self.normalize_layer(out_data, global_layer_index)
+		global_layer_index += 1
+
+		# residual connection
 		residual_input = out_data
 
-		# GLU layers
+		### GLU Layers ###
 		for layer_index in xrange(self.num_blocks * self.num_layers_per_block):
 			out_data = self._forward_glu_layer(layer_index, out_data)
+			out_data = self.normalize_layer(out_data, global_layer_index)
 			if (layer_index + 1) % self.num_layers_per_block == 0:
 				if self.using_dropout:
 					out_data = F.dropout(out_data, ratio=self.dropout)
 				out_data += residual_input
 				residual_input = out_data
+			global_layer_index += 1
 
 		out_data = F.swapaxes(out_data, 1, 3)
 		height = out_data.shape[2]
@@ -139,7 +212,7 @@ class ZhangModel(Chain):
 
 		if return_last:
 			out_data = out_data[..., -1, None]
-
+		
 		# fully-connected layers
 		for layer_index in xrange(self.num_fc_layers - 1):
 			out_data = self._forward_fc_layer(layer_index, out_data)
@@ -150,6 +223,8 @@ class ZhangModel(Chain):
 		out_data = self._forward_fc_layer(self.num_fc_layers - 1, out_data)
 		out_data = F.reshape(out_data, (batchsize, -1))
 		out_data = F.split_axis(out_data, seq_length, axis=1)
+
+		self.running_z += 1
 
 		return out_data
 

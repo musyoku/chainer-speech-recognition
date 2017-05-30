@@ -52,11 +52,11 @@ def decay_learning_rate(opt, factor, final_value):
 
 def main(args):
 	wav_paths = [
-		"/home/stark/sandbox/CSJ/WAV/core/",
+		"/home/aibo/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/stark/sandbox/CSJ_/core/",
+		"/home/aibo/sandbox/CSJ_/core/",
 	]
 
 	np.random.seed(0)
@@ -151,7 +151,7 @@ def main(args):
 	total_time = 0
 
 	running_mean = 0
-	running_var = 0
+	running_stddev = 0
 	running_z = 0
 
 	for epoch in xrange(1, max_epoch + 1):
@@ -170,13 +170,13 @@ def main(args):
 				# 平均と分散を計算
 				# 本来は学習前にデータ全体の平均・分散を計算すべきだが、データ拡大を用いるため、逐一更新していくことにする
 				mean_x_batch = np.mean(x_batch, axis=(0, 3)).reshape((1, feature_dim, -1, 1))
-				var_x_batch = np.var(x_batch, axis=(0, 3)).reshape((1, feature_dim, -1, 1))
+				stddev_x_batch = np.std(x_batch, axis=(0, 3)).reshape((1, feature_dim, -1, 1))
 				running_mean = running_mean * (running_z / (running_z + 1)) + mean_x_batch / (running_z + 1)	# 正規化定数が+1されることに注意
-				running_var = running_var * (running_z / (running_z + 1)) + var_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
+				running_stddev = running_stddev * (running_z / (running_z + 1)) + stddev_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
 				running_z += 1
 
 				# 正規化
-				x_batch = (x_batch - running_mean) / running_var
+				x_batch = (x_batch - running_mean) / running_stddev
 
 				# GPU
 				if model.xp is cuda.cupy:
@@ -188,6 +188,7 @@ def main(args):
 				# 誤差の計算
 				y_batch = model(x_batch)	# list of variables
 				loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+				print("", loss.data)
 
 				# 更新
 				model.cleargrads()
@@ -209,7 +210,7 @@ def main(args):
 		sys.stdout.flush()
 
 		elapsed_time = time.time() - start_time
-		print("done in {} min, loss=".format(elapsed_time, sum_loss / total_iterations))
+		print("done in {} min, loss={}".format(int(elapsed_time / 60), sum_loss / total_iterations))
 		total_time += elapsed_time
 
 
@@ -218,14 +219,14 @@ if __name__ == "__main__":
 	parser.add_argument("--batchsize", "-b", type=int, default=8)
 	parser.add_argument("--epoch", "-e", type=int, default=1000)
 	parser.add_argument("--grad-clip", "-gc", type=float, default=1) 
-	parser.add_argument("--weight-decay", "-wd", type=float, default=2e-5) 
-	parser.add_argument("--learning-rate", "-lr", type=float, default=0.1)
+	parser.add_argument("--weight-decay", "-wd", type=float, default=1e-5) 
+	parser.add_argument("--learning-rate", "-lr", type=float, default=0.001)
 	parser.add_argument("--lr-decay", "-decay", type=float, default=0.95)
-	parser.add_argument("--momentum", "-mo", type=float, default=0.99)
-	parser.add_argument("--optimizer", "-opt", type=str, default="nesterov")
+	parser.add_argument("--momentum", "-mo", type=float, default=0.9)
+	parser.add_argument("--optimizer", "-opt", type=str, default="adam")
 	
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
-	parser.add_argument("--ndim-h", "-nh", type=int, default=640)
+	parser.add_argument("--ndim-h", "-nh", type=int, default=320)
 	parser.add_argument("--num-layers-per-block", "-layers", type=int, default=2)
 	parser.add_argument("--num-blocks", "-blocks", type=int, default=1)
 	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
