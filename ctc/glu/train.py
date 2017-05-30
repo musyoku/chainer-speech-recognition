@@ -161,7 +161,7 @@ def main(args):
 		
 		for itr in xrange(1, total_iterations + 1):
 
-			with chainer.using_config("debug", True):
+			with chainer.using_config("Train", True):
 				bucket_idx = int(np.random.choice(np.arange(len(bucketset)), size=1, p=buckets_distribution))
 				bucket = bucketset[bucket_idx]
 				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize, ID_PAD)
@@ -188,7 +188,6 @@ def main(args):
 				# 誤差の計算
 				y_batch = model(x_batch)	# list of variables
 				loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
-				print("", loss.data)
 
 				# 更新
 				model.cleargrads()
