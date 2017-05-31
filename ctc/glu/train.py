@@ -189,13 +189,18 @@ def main(args):
 				y_batch = model(x_batch)	# list of variables
 				loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
+
 				# 更新
 				model.cleargrads()
 				loss.backward()
 				optimizer.update()
 
 				bucketset[bucket_idx] = np.roll(bucket, args.batchsize)	# ずらす
-				sum_loss += float(loss.data)
+
+				loss = float(loss.data)
+				if loss != loss:
+					raise Exception("loss is NaN")
+				sum_loss += loss
 
 			sys.stdout.write("\r" + stdout.CLEAR)
 			sys.stdout.write("\riteration {}/{}".format(itr, total_iterations))

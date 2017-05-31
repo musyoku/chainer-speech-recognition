@@ -115,186 +115,71 @@ class ZhangModel(Chain):
 		for i in xrange(self.num_blocks * self.num_layers_per_block):
 			self.get_glu_layer(i).reset_state()
 
-	def _forward_glu_layer(self, layer_index, in_data):
+	def forward_glu_layer(self, layer_index, in_data):
 		glu = self.get_glu_layer(layer_index)
 		out_data = glu(in_data)
 		return out_data
 
-	def _forward_fc_layer(self, layer_index, in_data):
+	def forward_fc_layer(self, layer_index, in_data):
 		fc = self.get_fc_layer(layer_index)
 		out_data = fc(in_data)
 		return out_data
 
-	def normalize_conv_layer(self, out_data, global_layer_index):
+	# Layer Normalization
+	# https://arxiv.org/abs/1607.06450
+	def normalize_conv_layer(self, out_data):
 		xp = self.xp
 		eps = 1e-4
+		batchsize = out_data.shape[0]
 		seq_length = out_data.shape[3]
 
-		# mean_batch = xp.mean(out_data.data, axis=0)[None, ...]
-		# stddev_batch = xp.std(out_data.data, axis=0)[None, ...] + eps
+		# 時間方向（軸3）とミニバッチの平均は取らない
+		mean_batch = xp.mean(out_data.data, axis=(1, 2)).reshape((batchsize, 1, 1, seq_length))
+		stddev_batch = xp.std(out_data.data, axis=(1, 2)).reshape((batchsize, 1, 1, seq_length)) + eps
 
-		mean_batch = xp.mean(out_data.data, axis=(0, 1, 2)).reshape((1, 1, 1, -1))
-		stddev_batch = xp.std(out_data.data, axis=(0, 1, 2)).reshape((1, 1, 1, -1)) + eps
-
-		running_mean, running_stddev, z = self.running_mean[global_layer_index], self.running_stddev[global_layer_index], self.running_z_conv
-
-		if z is None:
-			z = xp.zeros((seq_length,), dtype=xp.float32).reshape((1, 1, 1, -1))
-			self.running_z_conv = z
-		if running_mean is None:
-			running_mean = xp.zeros((seq_length,), dtype=xp.float32).reshape((1, 1, 1, -1))
-			self.running_mean[global_layer_index] = running_mean
-		if running_stddev is None:
-			running_stddev = xp.zeros((seq_length,), dtype=xp.float32).reshape((1, 1, 1, -1))
-			self.running_stddev[global_layer_index] = running_stddev
-
-		if seq_length > z.size:
-			diff = seq_length - z.size
-			z = xp.concatenate((z, xp.zeros((diff,), dtype=xp.float32).reshape(1, 1, 1, -1)), axis=3)
-			self.running_z_conv = z
-		if seq_length > running_mean.size:
-			diff = seq_length - running_mean.size
-			running_mean = xp.concatenate((running_mean, xp.zeros((diff,), dtype=xp.float32).reshape(1, 1, 1, -1)), axis=3)
-			self.running_mean[global_layer_index] = running_mean
-		if seq_length > running_stddev.size:
-			diff = seq_length - running_stddev.size
-			running_stddev = xp.concatenate((running_stddev, xp.zeros((diff,), dtype=xp.float32).reshape(1, 1, 1, -1)), axis=3)
-			self.running_stddev[global_layer_index] = running_stddev
-
-		if seq_length < z.size:
-			z = z[..., :seq_length]
-			running_mean = running_mean[..., :seq_length]
-			running_stddev = running_stddev[..., :seq_length]
-
-		# print(running_mean.shape)
-		# print(mean_batch.shape)
-		# print(running_stddev.shape)
-		# print(stddev_batch.shape)
-		# print(z.shape)
-
-		running_mean = running_mean * (z / (z + 1)) + mean_batch / (z + 1)			# 正規化定数が+1されることに注意
-		running_stddev = running_stddev * (z / (z + 1)) + stddev_batch / (z + 1)	# 正規化定数が+1されることに注意
-
-		out_data = (out_data - running_mean) / running_stddev
-
-		self.running_mean[global_layer_index][..., :seq_length] = running_mean
-		self.running_stddev[global_layer_index][..., :seq_length] = running_stddev
+		out_data = (out_data - mean_batch) / stddev_batch
 
 		return out_data
 
-	def normalize_fc_layer(self, out_data, batchsize, seq_length, global_layer_index):
+	# Layer Normalization
+	# https://arxiv.org/abs/1607.06450
+	def normalize_fc_layer(self, out_data, batchsize, seq_length):
 		xp = self.xp
 		eps = 1e-4
 
+		# 時間方向（軸1）とミニバッチの平均は取らない
 		out_data = F.reshape(out_data, (batchsize, seq_length, -1))
-		mean_batch = xp.mean(out_data.data, axis=(0, 2)).reshape((1, seq_length, 1))
-		stddev_batch = xp.std(out_data.data, axis=(0, 2)).reshape((1, seq_length, 1)) + eps
+		mean_batch = xp.mean(out_data.data, axis=2).reshape((batchsize, seq_length, 1))
+		stddev_batch = xp.std(out_data.data, axis=2).reshape((batchsize, seq_length, 1)) + eps
 
-		running_mean, running_stddev, z = self.running_mean[global_layer_index], self.running_stddev[global_layer_index], self.running_z_fc
-
-		if z is None:
-			z = xp.zeros((seq_length,), dtype=xp.float32).reshape((1, -1, 1))
-			self.running_z_fc = z
-		if running_mean is None:
-			running_mean = xp.zeros((seq_length,), dtype=xp.float32).reshape((1, -1, 1))
-			self.running_mean[global_layer_index] = running_mean
-		if running_stddev is None:
-			running_stddev = xp.zeros((seq_length,), dtype=xp.float32).reshape((1, -1, 1))
-			self.running_stddev[global_layer_index] = running_stddev
-
-		if seq_length > z.size:
-			diff = seq_length - z.size
-			z = xp.concatenate((z, xp.zeros((diff,), dtype=xp.float32).reshape(1, -1, 1)), axis=1)
-			self.running_z_fc = z
-		if seq_length > running_mean.size:
-			diff = seq_length - running_mean.size
-			running_mean = xp.concatenate((running_mean, xp.zeros((diff,), dtype=xp.float32).reshape(1, -1, 1)), axis=1)
-			self.running_mean[global_layer_index] = running_mean
-		if seq_length > running_stddev.size:
-			diff = seq_length - running_stddev.size
-			running_stddev = xp.concatenate((running_stddev, xp.zeros((diff,), dtype=xp.float32).reshape(1, -1, 1)), axis=1)
-			self.running_stddev[global_layer_index] = running_stddev
-
-		running_mean = running_mean * (z / (z + 1)) + mean_batch / (z + 1)			# 正規化定数が+1されることに注意
-		running_stddev = running_stddev * (z / (z + 1)) + stddev_batch / (z + 1)	# 正規化定数が+1されることに注意
-
-		print(out_data)
 		out_data = (out_data - mean_batch) / stddev_batch
-		print(out_data)
-
-		self.running_mean[global_layer_index][..., :seq_length] = running_mean
-		self.running_stddev[global_layer_index][..., :seq_length] = running_stddev
-
 		out_data = F.reshape(out_data, (batchsize * seq_length, -1))
+
 		return out_data
 
 	def __call__(self, X, return_last=False):
 		batchsize = X.shape[0]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-		X = X[:, :, :, :3]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 		seq_length = X.shape[3]
-		global_layer_index = 0
 
 		### First Layer ###
 		pad = self.kernel_size[1] - 1
 		out_data = self.input_conv(X)[..., :-pad]
-		out_data = self.normalize_conv_layer(out_data, global_layer_index)
+		out_data = self.normalize_conv_layer(out_data)
 		out_data = F.relu(out_data)
 		out_data = F.max_pooling_2d(out_data, ksize=(3, 1))
-		global_layer_index += 1
 
 		# residual connection
 		residual_input = out_data
 
 		### GLU Layers ###
 		for layer_index in xrange(self.num_blocks * self.num_layers_per_block):
-			out_data = self._forward_glu_layer(layer_index, out_data)
-			out_data = self.normalize_conv_layer(out_data, global_layer_index)
+			out_data = self.forward_glu_layer(layer_index, out_data)
+			out_data = self.normalize_conv_layer(out_data)
 			if (layer_index + 1) % self.num_layers_per_block == 0:
 				if self.using_dropout:
 					out_data = F.dropout(out_data, ratio=self.dropout)
 				out_data += residual_input
 				residual_input = out_data
-			global_layer_index += 1
 
 		if return_last:
 			out_data = out_data[..., -1, None]
@@ -305,21 +190,18 @@ class ZhangModel(Chain):
 		out_data = F.reshape(out_data, (-1, self.ndim_h * height))
 
 		for layer_index in xrange(self.num_fc_layers - 1):
-			out_data = self._forward_fc_layer(layer_index, out_data)
-			out_data = self.normalize_fc_layer(out_data, batchsize, seq_length, global_layer_index)
+			out_data = self.forward_fc_layer(layer_index, out_data)
+			out_data = self.normalize_fc_layer(out_data, batchsize, seq_length)
 			out_data = F.relu(out_data)
 			if self.using_dropout:
 				out_data = F.dropout(out_data, ratio=self.dropout)
-			global_layer_index += 1
 
-		out_data = self._forward_fc_layer(self.num_fc_layers - 1, out_data)
+		# 最後のFC層には活性化関数を通さないので別に処理
+		out_data = self.forward_fc_layer(self.num_fc_layers - 1, out_data)
+
+		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある
 		out_data = F.reshape(out_data, (batchsize, -1))
 		out_data = F.split_axis(out_data, seq_length, axis=1)
-
-		raise Exception()
-
-		self.running_z_conv += 1
-		self.running_z_fc += 1
 
 		return out_data
 
