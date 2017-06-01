@@ -99,12 +99,6 @@ class ZhangModel(Chain):
 		self.add_link("fc{}".format(num_fc_layers - 1), L.Linear(None, vocab_size))
 		num_layers += 1
 
-		# batch normalization
-		self.running_mean = [None] * num_layers
-		self.running_stddev = [None] * num_layers
-		self.running_z_conv = None
-		self.running_z_fc = None
-
 	def get_glu_layer(self, index):
 		return getattr(self, "glu{}".format(index))
 
@@ -205,7 +199,7 @@ class ZhangModel(Chain):
 
 		return out_data
 
-	def _forward_layer_one_step(self, layer_index, in_data):
+	def forward_glu_layer_one_step(self, layer_index, in_data):
 		glu = self.get_glu_layer(layer_index)
 		out_data = glu.forward_one_step(in_data)
 		return out_data
@@ -224,9 +218,9 @@ class ZhangModel(Chain):
 		enmbedding = F.swapaxes(enmbedding, 1, 2)
 		residual_input = enmbedding if self.ndim_h == self.ndim_embedding else 0
 
-		out_data = self._forward_layer_one_step(0, enmbedding)[:, :, -ksize:]
+		out_data = self.forward_glu_layer_one_step(0, enmbedding)[:, :, -ksize:]
 		for layer_index in xrange(1, self.num_blocks * self.num_layers_per_block):
-			out_data = self._forward_layer_one_step(layer_index, out_data)[:, :, -ksize:]
+			out_data = self.forward_glu_layer_one_step(layer_index, out_data)[:, :, -ksize:]
 			if (layer_index + 1) % self.num_layers_per_block == 0:
 				if self.using_dropout:
 					out_data = F.dropout(out_data, ratio=self.dropout)

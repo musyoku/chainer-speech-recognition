@@ -132,7 +132,6 @@ def main(args):
 		bucket = np.asarray(bucket)
 		np.random.shuffle(bucket)
 		bucketset[idx] = bucket
-	max_epoch = 2
 
 	# モデル
 	model = load_model(args.model_dir)
@@ -154,7 +153,7 @@ def main(args):
 	running_stddev = 0
 	running_z = 0
 
-	for epoch in xrange(1, max_epoch + 1):
+	for epoch in xrange(1, args.epoch + 1):
 		print("Epoch", epoch)
 		start_time = time.time()
 		sum_loss = 0
@@ -180,7 +179,7 @@ def main(args):
 
 				# GPU
 				if model.xp is cuda.cupy:
-					x_batch = cuda.to_gpu(x_batch)
+					x_batch = cuda.to_gpu(x_batch.astype(np.float32))
 					t_batch = cuda.to_gpu(np.asarray(t_batch).astype(np.int32))
 					x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
 					t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
