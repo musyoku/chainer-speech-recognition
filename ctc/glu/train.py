@@ -290,6 +290,8 @@ def main(args):
 								continue
 							target_ids.append(char_id)
 
+						print(target_ids, pred_ids)
+
 						error = compute_character_error_rate(target_ids, pred_ids)
 						sum_error += error
 
@@ -303,6 +305,9 @@ def main(args):
 
 			for bucket in buckets_dev:
 				np.random.shuffle(bucket)
+
+		sys.stdout.write("\r" + stdout.CLEAR)
+		sys.stdout.flush()
 
 		elapsed_time = time.time() - start_time
 		print("done in {} min".format(int(elapsed_time / 60)))
