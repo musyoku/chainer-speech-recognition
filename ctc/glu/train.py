@@ -15,6 +15,8 @@ class stdout:
 	BOLD = "\033[1m"
 	END = "\033[0m"
 	CLEAR = "\033[2K"
+	MOVE = "\033[1A"
+	LEFT = "\033[G"
 
 def print_bold(str):
 	print(stdout.BOLD + str + stdout.END)
@@ -238,23 +240,63 @@ def main(args):
 
 		# バリデーション
 		with chainer.using_config("Train", False):
-			bucket_error = []
+			train_error = []
+			dev_error = []
 
+			# train
+			for bucket_idx in xrange(len(buckets_train)):
+				bucket = buckets_train[bucket_idx]
+				sum_error = 0
+
+				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, ID_PAD)
+				x_batch = (x_batch - running_mean) / running_stddev
+
+				if model.xp is cuda.cupy:
+					x_batch = cuda.to_gpu(x_batch.astype(np.float32))
+					t_batch = cuda.to_gpu(np.asarray(t_batch).astype(np.int32))
+					x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
+					t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
+
+				y_batch = model(x_batch, split_into_variables=False).data
+				T = y_batch.shape[2]
+				xp = model.xp
+
+				for batch_idx in xrange(len(y_batch)):
+					y_sequence = y_batch[batch_idx]
+					t_sequence = t_batch[batch_idx]
+
+					pred_ids = []
+					for t in xrange(T):
+						prob = y_sequence[..., t]
+						char_id = int(xp.argmax(prob))
+						if char_id == ID_PAD:
+							continue
+						if char_id == ID_BLANK:
+							continue
+						pred_ids.append(char_id)
+
+					target_ids = []
+					for t in xrange(t_sequence.size):
+						char_id = int(t_sequence[t])
+						if char_id == ID_PAD:
+							continue
+						if char_id == ID_BLANK:
+							continue
+						target_ids.append(char_id)
+
+					error = compute_character_error_rate(target_ids, pred_ids)
+					sum_error += error
+
+				train_error.append(sum_error * 100.0 / args.batchsize)
+
+			# dev
 			for bucket_idx in xrange(len(buckets_dev)):
 				bucket = buckets_dev[bucket_idx]
-				total_iterations_dev = int(len(bucket) // args.batchsize)
+				total_iterations_dev = int(len(bucket) // args.batchsize_dev)
 				sum_error = 0
 
 				for itr in xrange(total_iterations_dev):
-					x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize, ID_PAD)
-					feature_dim = x_batch.shape[1]
-
-					mean_x_batch = np.mean(x_batch, axis=(0, 3)).reshape((1, feature_dim, -1, 1))
-					stddev_x_batch = np.std(x_batch, axis=(0, 3)).reshape((1, feature_dim, -1, 1))
-					running_mean = running_mean * (running_z / (running_z + 1)) + mean_x_batch / (running_z + 1)	# 正規化定数が+1されることに注意
-					running_stddev = running_stddev * (running_z / (running_z + 1)) + stddev_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
-					running_z += 1
-
+					x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, ID_PAD)
 					x_batch = (x_batch - running_mean) / running_stddev
 
 					if model.xp is cuda.cupy:
@@ -290,8 +332,6 @@ def main(args):
 								continue
 							target_ids.append(char_id)
 
-						print(target_ids, pred_ids)
-
 						error = compute_character_error_rate(target_ids, pred_ids)
 						sum_error += error
 
@@ -299,26 +339,28 @@ def main(args):
 					sys.stdout.write("\rComputing validation error - bucket {}/{} - iteration {}/{}".format(bucket_idx + 1, len(buckets_dev), itr, total_iterations_dev))
 					sys.stdout.flush()
 
-					buckets_dev[bucket_idx] = np.roll(bucket, args.batchsize)
+					buckets_dev[bucket_idx] = np.roll(bucket, args.batchsize_dev)
 
-				bucket_error.append(sum_error * 100.0 / args.batchsize / total_iterations_dev)
+				dev_error.append(sum_error * 100.0 / args.batchsize / total_iterations_dev)
 
 			for bucket in buckets_dev:
 				np.random.shuffle(bucket)
 
-		sys.stdout.write("\r" + stdout.CLEAR)
-		sys.stdout.flush()
+		sys.stdout.write(stdout.MOVE)
+		sys.stdout.write(stdout.LEFT)
 
 		elapsed_time = time.time() - start_time
-		print("done in {} min".format(int(elapsed_time / 60)))
+		print("Epoch {} done in {} min".format(epoch, int(elapsed_time / 60)))
+		sys.stdout.write(stdout.CLEAR)
 		print("	loss:", sum_loss / total_iterations_train)
-		print("	CER:", bucket_error)
+		print("	CER:", train_error, dev_error)
 		total_time += elapsed_time
 
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--batchsize", "-b", type=int, default=8)
+	parser.add_argument("--batchsize-dev", "-bd", type=int, default=64)
 	parser.add_argument("--epoch", "-e", type=int, default=1000)
 	parser.add_argument("--grad-clip", "-gc", type=float, default=1) 
 	parser.add_argument("--weight-decay", "-wd", type=float, default=1e-5) 
