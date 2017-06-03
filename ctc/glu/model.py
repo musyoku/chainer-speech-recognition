@@ -151,7 +151,7 @@ class ZhangModel(Chain):
 
 		return out_data
 
-	def __call__(self, X, return_last=False):
+	def __call__(self, X, return_last=False, split_into_variables=True):
 		batchsize = X.shape[0]
 		seq_length = X.shape[3]
 
@@ -182,7 +182,6 @@ class ZhangModel(Chain):
 		out_data = F.swapaxes(out_data, 1, 3)
 		height = out_data.shape[2]
 		out_data = F.reshape(out_data, (-1, self.ndim_h * height))
-
 		for layer_index in xrange(self.num_fc_layers - 1):
 			out_data = self.forward_fc_layer(layer_index, out_data)
 			out_data = self.normalize_fc_layer(out_data, batchsize, seq_length)
@@ -192,10 +191,15 @@ class ZhangModel(Chain):
 
 		# 最後のFC層には活性化関数を通さないので別に処理
 		out_data = self.forward_fc_layer(self.num_fc_layers - 1, out_data)
+		out_data = self.normalize_fc_layer(out_data, batchsize, seq_length)
 
 		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある
-		out_data = F.reshape(out_data, (batchsize, -1))
-		out_data = F.split_axis(out_data, seq_length, axis=1)
+		if split_into_variables:
+			out_data = F.reshape(out_data, (batchsize, -1))
+			out_data = F.split_axis(out_data, seq_length, axis=1)
+		else:
+			out_data = F.reshape(out_data, (batchsize, seq_length, -1))
+			out_data = F.swapaxes(out_data, 1, 2)
 
 		return out_data
 
