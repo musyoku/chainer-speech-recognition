@@ -301,7 +301,7 @@ def main(args):
 
 					buckets_dev[bucket_idx] = np.roll(bucket, args.batchsize)
 
-				bucket_error.append(sum_error / args.batchsize / total_iterations_dev)
+				bucket_error.append(sum_error * 100.0 / args.batchsize / total_iterations_dev)
 
 			for bucket in buckets_dev:
 				np.random.shuffle(bucket)
