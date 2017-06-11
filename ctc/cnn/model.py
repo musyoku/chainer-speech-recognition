@@ -58,46 +58,44 @@ def load_model(dirname):
 		return qrnn
 	else:
 		return None
+
+def Convolution2D(in_channel, out_channel, ksize, stride=1, pad=0, initialW=None, weightnorm=False):
+	if weightnorm:
+		return L.WeightnormConvolution2D(in_channel, out_channel, ksize, stride=1, pad=(0, ksize[1] - 1), initialV=initialW)
+	return L.Convolution2D(in_channel, out_channel, ksize, stride=1, pad=(0, ksize[1] - 1), initialW=initialW)
+
 # Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
 # https://arxiv.org/abs/1701.02720
 class ZhangModel(Chain):
-	def __init__(self, vocab_size, num_blocks, num_layers_per_block, num_fc_layers, ndim_features, ndim_h, kernel_size=(3, 5), dropout=0, weightnorm=False, wgain=1, ignore_label=None):
+	def __init__(self, vocab_size, num_conv_layers, num_fc_layers, ndim_audio_features, ndim_h, kernel_size=(3, 5), dropout=0, layernorm=False, weightnorm=False, wgain=1):
 		super(ZhangModel, self).__init__()
-		assert num_blocks > 0
-		assert num_layers_per_block > 0
+		assert num_conv_layers > 0
+		assert num_fc_layers > 0
+		assert ndim_audio_features > 0
+		assert ndim_h > 0
 		self.vocab_size = vocab_size
-		self.num_blocks = num_blocks
-		self.num_layers_per_block = num_layers_per_block
+		self.num_conv_layers = num_conv_layers
 		self.num_fc_layers = num_fc_layers
+		self.ndim_audio_features = ndim_audio_features
 		self.ndim_h = ndim_h
-		self.ndim_features = ndim_features
 		self.kernel_size = kernel_size
 		self.weightnorm = weightnorm
+		self.using_layernorm = True if layernorm else False
 		self.dropout = dropout
 		self.using_dropout = True if dropout > 0 else False
 		self.wgain = wgain
-		self.ignore_label = ignore_label
 
-		num_layers = 0
 
-		wstd = math.sqrt(wgain / ndim_features / kernel_size[0] / kernel_size[1])
-		if weightnorm:
-			input_conv = L.WeightnormConvolution2D(ndim_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialV=initializers.Normal(wstd))
-		else:
-			input_conv = L.Convolution2D(ndim_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd))
+		wstd = math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])
+		self.add_link("input_conv", Convolution2D(ndim_audio_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
 
-		self.add_link("input_conv", input_conv)
-		num_layers += 1
-
+		wstd = math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])
 		for i in xrange(num_blocks * num_layers_per_block):
-			self.add_link("glu{}".format(i), L.GLU(ndim_h, ndim_h, kernel_size=kernel_size, wgain=wgain, weightnorm=weightnorm))
-			num_layers += 1
+			self.add_link("conv{}".format(i), Convolution2D(ndim_audio_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
 
 		for i in xrange(num_fc_layers - 1):
 			self.add_link("fc{}".format(i), L.Linear(None, 5))
-			num_layers += 1
 		self.add_link("fc{}".format(num_fc_layers - 1), L.Linear(None, vocab_size))
-		num_layers += 1
 
 	def get_glu_layer(self, index):
 		return getattr(self, "glu{}".format(index))

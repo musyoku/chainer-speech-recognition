@@ -49,7 +49,7 @@ def load_model(dirname):
 			except Exception as e:
 				raise Exception("could not load {}".format(param_filename))
 
-		qrnn = ZhangModel(**params)
+		qrnn = QRNNModel(**params)
 
 		if os.path.isfile(model_filename):
 			print("loading {} ...".format(model_filename))
@@ -58,11 +58,10 @@ def load_model(dirname):
 		return qrnn
 	else:
 		return None
-# Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
-# https://arxiv.org/abs/1701.02720
-class ZhangModel(Chain):
-	def __init__(self, vocab_size, num_blocks, num_layers_per_block, num_fc_layers, ndim_features, ndim_h, kernel_size=(3, 5), dropout=0, weightnorm=False, wgain=1, ignore_label=None):
-		super(ZhangModel, self).__init__()
+
+class QRNNModel(Chain):
+	def __init__(self, vocab_size, num_conv_layers, num_rnn_layers, num_fc_layers, ndim_features, ndim_h, kernel_size=(3, 5), dropout=0, weightnorm=False, wgain=1, ignore_label=None):
+		super(QRNNModel, self).__init__()
 		assert num_blocks > 0
 		assert num_layers_per_block > 0
 		self.vocab_size = vocab_size

@@ -185,7 +185,7 @@ def main(args):
 		start_time = time.time()
 		sum_loss = 0
 		
-		with chainer.using_config("Train", True):
+		with chainer.using_config("train", True):
 
 			for itr in xrange(1, total_iterations_train + 1):
 				bucket_idx = int(np.random.choice(np.arange(len(buckets_train)), size=1, p=buckets_distribution))
@@ -239,7 +239,7 @@ def main(args):
 		sys.stdout.flush()
 
 		# バリデーション
-		with chainer.using_config("Train", False):
+		with chainer.using_config("train", False):
 			train_error = []
 			dev_error = []
 
@@ -258,7 +258,7 @@ def main(args):
 					t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
 				y_batch = model(x_batch, split_into_variables=False).data
-				T = y_batch.shape[2]
+				T = y_batch.shape[1]
 				xp = model.xp
 
 				for batch_idx in xrange(len(y_batch)):
@@ -267,7 +267,8 @@ def main(args):
 
 					pred_ids = []
 					for t in xrange(T):
-						prob = y_sequence[..., t]
+						prob = y_sequence[t]
+						assert prob.size == vocab_size
 						char_id = int(xp.argmax(prob))
 						if char_id == ID_PAD:
 							continue
@@ -306,7 +307,7 @@ def main(args):
 						t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
 					y_batch = model(x_batch, split_into_variables=False).data
-					T = y_batch.shape[2]
+					T = y_batch.shape[1]
 					xp = model.xp
 
 					for batch_idx in xrange(len(y_batch)):
@@ -315,7 +316,8 @@ def main(args):
 
 						pred_ids = []
 						for t in xrange(T):
-							prob = y_sequence[..., t]
+							prob = y_sequence[t]
+							assert prob.size == vocab_size
 							char_id = int(xp.argmax(prob))
 							if char_id == ID_PAD:
 								continue
@@ -360,7 +362,7 @@ def main(args):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--batchsize", "-b", type=int, default=8)
-	parser.add_argument("--batchsize-dev", "-bd", type=int, default=64)
+	parser.add_argument("--batchsize-dev", "-bd", type=int, default=8)
 	parser.add_argument("--epoch", "-e", type=int, default=1000)
 	parser.add_argument("--grad-clip", "-gc", type=float, default=1) 
 	parser.add_argument("--weight-decay", "-wd", type=float, default=1e-5) 
