@@ -94,7 +94,7 @@ class ZhangModel(Chain):
 			num_layers += 1
 
 		for i in xrange(num_fc_layers - 1):
-			self.add_link("fc{}".format(i), L.Linear(None, 5))
+			self.add_link("fc{}".format(i), L.Linear(None, 1024))
 			num_layers += 1
 		self.add_link("fc{}".format(num_fc_layers - 1), L.Linear(None, vocab_size))
 		num_layers += 1
