@@ -4,10 +4,12 @@ from __future__ import print_function
 from six.moves import xrange
 import sys, os, json, pickle, math
 import chainer.functions as F
+import chainer.links as L
 from six.moves import xrange
 from chainer import Chain, serializers, initializers
 sys.path.append("../../")
-import glu as L
+from convolution_2d import Convolution2D as WeightnormConvolution2D
+from convolution_1d import Convolution1D as WeightnormConvolution1D
 
 def save_model(dirname, model):
 	model_filename = dirname + "/model.hdf5"
@@ -61,13 +63,18 @@ def load_model(dirname):
 
 def Convolution2D(in_channel, out_channel, ksize, stride=1, pad=0, initialW=None, weightnorm=False):
 	if weightnorm:
-		return L.WeightnormConvolution2D(in_channel, out_channel, ksize, stride=1, pad=(0, ksize[1] - 1), initialV=initialW)
-	return L.Convolution2D(in_channel, out_channel, ksize, stride=1, pad=(0, ksize[1] - 1), initialW=initialW)
+		return WeightnormConvolution2D(in_channel, out_channel, ksize, stride=1, pad=pad, initialV=initialW)
+	return L.Convolution2D(in_channel, out_channel, ksize, stride=1, pad=pad, initialW=initialW)
+
+def Convolution1D(in_channels, out_channels, ksize, stride=1, pad=0, initialW=None, weightnorm=False):
+	if weightnorm:
+		return WeightnormConvolution1D(in_channels, out_channels, ksize, stride=stride, pad=pad, initialV=initialW)
+	return L.ConvolutionND(1, in_channels, out_channels, ksize, stride=stride, pad=pad, initialW=initialW)
 
 # Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
 # https://arxiv.org/abs/1701.02720
 class ZhangModel(Chain):
-	def __init__(self, vocab_size, num_conv_layers, num_fc_layers, ndim_audio_features, ndim_h, kernel_size=(3, 5), dropout=0, layernorm=False, weightnorm=False, wgain=1):
+	def __init__(self, vocab_size, num_conv_layers, num_fc_layers, ndim_audio_features, ndim_h, ndim_fc=1024, kernel_size=(3, 5), dropout=0, layernorm=False, weightnorm=False, wgain=1, num_mel_filters=40):
 		super(ZhangModel, self).__init__()
 		assert num_conv_layers > 0
 		assert num_fc_layers > 0
@@ -85,31 +92,32 @@ class ZhangModel(Chain):
 		self.using_dropout = True if dropout > 0 else False
 		self.wgain = wgain
 
-
 		wstd = math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])
 		self.add_link("input_conv", Convolution2D(ndim_audio_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
 
 		wstd = math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])
-		for i in xrange(num_blocks * num_layers_per_block):
-			self.add_link("conv{}".format(i), Convolution2D(ndim_audio_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
+		for i in xrange(num_conv_layers):
+			self.add_link("conv{}".format(i), Convolution2D(ndim_h, ndim_h, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
 
-		for i in xrange(num_fc_layers - 1):
-			self.add_link("fc{}".format(i), L.Linear(None, 5))
-		self.add_link("fc{}".format(num_fc_layers - 1), L.Linear(None, vocab_size))
+		kernel_height = int(math.ceil((num_mel_filters - 2) / 3))
+		if num_fc_layers == 1:
+			self.add_link("fc0", Convolution2D(ndim_h, vocab_size, (kernel_height, 1), stride=1, pad=0))
+		else:
+			self.add_link("fc0", Convolution2D(ndim_h, ndim_fc, (kernel_height, 1), stride=1, pad=0))
+			for i in xrange(num_fc_layers - 2):
+				self.add_link("fc{}".format(i + 1), Convolution1D(ndim_fc, ndim_fc, ksize=1, stride=1, pad=0))
+			self.add_link("fc{}".format(num_fc_layers - 1), Convolution1D(ndim_fc, vocab_size, ksize=1, stride=1, pad=0))
 
-	def get_glu_layer(self, index):
-		return getattr(self, "glu{}".format(index))
+	def get_conv_layer(self, index):
+		return getattr(self, "conv{}".format(index))
 
 	def get_fc_layer(self, index):
 		return getattr(self, "fc{}".format(index))
 
-	def reset_state(self):
-		for i in xrange(self.num_blocks * self.num_layers_per_block):
-			self.get_glu_layer(i).reset_state()
-
-	def forward_glu_layer(self, layer_index, in_data):
-		glu = self.get_glu_layer(layer_index)
-		out_data = glu(in_data)
+	def forward_conv_layer(self, layer_index, in_data):
+		pad = self.kernel_size[1] - 1
+		conv = self.get_conv_layer(layer_index)
+		out_data = conv(in_data)[..., :-pad]
 		return out_data
 
 	def forward_fc_layer(self, layer_index, in_data):
@@ -120,6 +128,8 @@ class ZhangModel(Chain):
 	# Layer Normalization
 	# https://arxiv.org/abs/1607.06450
 	def normalize_conv_layer(self, out_data):
+		if self.using_layernorm == False:
+			return out_data
 		xp = self.xp
 		eps = 1e-4
 		batchsize = out_data.shape[0]
@@ -136,6 +146,8 @@ class ZhangModel(Chain):
 	# Layer Normalization
 	# https://arxiv.org/abs/1607.06450
 	def normalize_fc_layer(self, out_data, batchsize, seq_length):
+		if self.using_layernorm == False:
+			return out_data
 		xp = self.xp
 		eps = 1e-4
 
@@ -163,23 +175,19 @@ class ZhangModel(Chain):
 		# residual connection
 		residual_input = out_data
 
-		### GLU Layers ###
-		for layer_index in xrange(self.num_blocks * self.num_layers_per_block):
-			out_data = self.forward_glu_layer(layer_index, out_data)
+		### Conv Layers ###
+		for layer_index in xrange(self.num_conv_layers):
+			out_data = self.forward_conv_layer(layer_index, out_data)
 			out_data = self.normalize_conv_layer(out_data)
-			if (layer_index + 1) % self.num_layers_per_block == 0:
-				if self.using_dropout:
-					out_data = F.dropout(out_data, ratio=self.dropout)
-				out_data += residual_input
-				residual_input = out_data
+			if self.using_dropout:
+				out_data = F.dropout(out_data, ratio=self.dropout)
+			out_data += residual_input
+			residual_input = out_data
 
 		if return_last:
 			out_data = out_data[..., -1, None]
 		
 		### Fully-connected Layers ###
-		out_data = F.swapaxes(out_data, 1, 3)
-		height = out_data.shape[2]
-		out_data = F.reshape(out_data, (-1, self.ndim_h * height))
 		for layer_index in xrange(self.num_fc_layers - 1):
 			out_data = self.forward_fc_layer(layer_index, out_data)
 			out_data = self.normalize_fc_layer(out_data, batchsize, seq_length)
@@ -193,15 +201,16 @@ class ZhangModel(Chain):
 
 		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある
 		if split_into_variables:
+			out_data = F.swapaxes(out_data, 1, 3)
 			out_data = F.reshape(out_data, (batchsize, -1))
 			out_data = F.split_axis(out_data, seq_length, axis=1)
 		else:
-			out_data = F.reshape(out_data, (batchsize, seq_length, -1))
+			out_data = F.swapaxes(out_data, 1, 2)
 
 		return out_data
 
 	def forward_glu_layer_one_step(self, layer_index, in_data):
-		glu = self.get_glu_layer(layer_index)
+		glu = self.get_conv_layer(layer_index)
 		out_data = glu.forward_one_step(in_data)
 		return out_data
 

@@ -31,6 +31,7 @@ def save_model(dirname, model):
 		"kernel_size": model.kernel_size,
 		"dropout": model.dropout,
 		"weightnorm": model.weightnorm,
+		"layernorm": model.layernorm,
 		"wgain": model.wgain,
 		"ignore_label": model.ignore_label,
 	}
@@ -61,7 +62,7 @@ def load_model(dirname):
 # Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
 # https://arxiv.org/abs/1701.02720
 class ZhangModel(Chain):
-	def __init__(self, vocab_size, num_blocks, num_layers_per_block, num_fc_layers, ndim_features, ndim_h, kernel_size=(3, 5), dropout=0, weightnorm=False, wgain=1, ignore_label=None):
+	def __init__(self, vocab_size, num_blocks, num_layers_per_block, num_fc_layers, ndim_features, ndim_h, kernel_size=(3, 5), dropout=0, layernorm=False, weightnorm=False, wgain=1, ignore_label=None):
 		super(ZhangModel, self).__init__()
 		assert num_blocks > 0
 		assert num_layers_per_block > 0
@@ -73,6 +74,7 @@ class ZhangModel(Chain):
 		self.ndim_features = ndim_features
 		self.kernel_size = kernel_size
 		self.weightnorm = weightnorm
+		self.using_layernorm = True if layernorm else False
 		self.dropout = dropout
 		self.using_dropout = True if dropout > 0 else False
 		self.wgain = wgain
@@ -122,6 +124,8 @@ class ZhangModel(Chain):
 	# Layer Normalization
 	# https://arxiv.org/abs/1607.06450
 	def normalize_conv_layer(self, out_data):
+		if self.using_layernorm == False:
+			return out_data
 		xp = self.xp
 		eps = 1e-4
 		batchsize = out_data.shape[0]
@@ -138,6 +142,8 @@ class ZhangModel(Chain):
 	# Layer Normalization
 	# https://arxiv.org/abs/1607.06450
 	def normalize_fc_layer(self, out_data, batchsize, seq_length):
+		if self.using_layernorm == False:
+			return out_data
 		xp = self.xp
 		eps = 1e-4
 

@@ -78,8 +78,6 @@ def main(args):
 		"/home/stark/sandbox/CSJ_/core/",
 	]
 
-	np.random.seed(0)
-
 	sampling_rate = 16000
 	frame_width = 0.032		# 秒
 	frame_shift = 0.01		# 秒
@@ -163,7 +161,7 @@ def main(args):
 	# モデル
 	model = load_model(args.model_dir)
 	if model is None:
-		model = ZhangModel(vocab_size, args.num_blocks, args.num_layers_per_block, args.num_fc_layers, args.ndim_audio_features, args.ndim_h, dropout=args.dropout, weightnorm=args.weightnorm, wgain=args.wgain, ignore_label=ID_PAD)
+		model = ZhangModel(vocab_size, args.num_conv_layers, args.num_fc_layers, args.ndim_audio_features, args.ndim_h, dropout=args.dropout, weightnorm=args.weightnorm, wgain=args.wgain, num_mel_filters=num_mel_filters)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu()
@@ -179,6 +177,8 @@ def main(args):
 	running_mean = 0
 	running_stddev = 0
 	running_z = 0
+
+	np.random.seed(0)
 
 	for epoch in xrange(1, args.epoch + 1):
 		print("Epoch", epoch)
@@ -373,8 +373,7 @@ if __name__ == "__main__":
 	
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
 	parser.add_argument("--ndim-h", "-nh", type=int, default=320)
-	parser.add_argument("--num-layers-per-block", "-layers", type=int, default=2)
-	parser.add_argument("--num-blocks", "-blocks", type=int, default=1)
+	parser.add_argument("--num-conv-layers", "-conv", type=int, default=2)
 	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
 	parser.add_argument("--wgain", "-w", type=float, default=1)
 

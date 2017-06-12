@@ -71,11 +71,11 @@ def decay_learning_rate(opt, factor, final_value):
 
 def main(args):
 	wav_paths = [
-		"/home/stark/sandbox/CSJ/WAV/core/",
+		"/home/aibo/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/stark/sandbox/CSJ_/core/",
+		"/home/aibo/sandbox/CSJ_/core/",
 	]
 
 	np.random.seed(0)
@@ -163,7 +163,7 @@ def main(args):
 	# モデル
 	model = load_model(args.model_dir)
 	if model is None:
-		model = ZhangModel(vocab_size, args.num_blocks, args.num_layers_per_block, args.num_fc_layers, args.ndim_audio_features, args.ndim_h, dropout=args.dropout, weightnorm=args.weightnorm, wgain=args.wgain, ignore_label=ID_PAD)
+		model = ZhangModel(vocab_size, args.num_blocks, args.num_layers_per_block, args.num_fc_layers, args.ndim_audio_features, args.ndim_h, dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm, wgain=args.wgain, ignore_label=ID_PAD)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu()
@@ -380,6 +380,7 @@ if __name__ == "__main__":
 
 	parser.add_argument("--dropout", "-dropout", type=float, default=0)
 	parser.add_argument("--weightnorm", "-weightnorm", default=False, action="store_true")
+	parser.add_argument("--layernorm", "-layernorm", default=False, action="store_true")
 	
 	parser.add_argument("--gpu-device", "-g", type=int, default=0) 
 	parser.add_argument("--interval", type=int, default=100)
