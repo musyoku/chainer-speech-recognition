@@ -66,11 +66,6 @@ def Convolution2D(in_channel, out_channel, ksize, stride=1, pad=0, initialW=None
 		return WeightnormConvolution2D(in_channel, out_channel, ksize, stride=1, pad=pad, initialV=initialW)
 	return L.Convolution2D(in_channel, out_channel, ksize, stride=1, pad=pad, initialW=initialW)
 
-def Convolution1D(in_channels, out_channels, ksize, stride=1, pad=0, initialW=None, weightnorm=False):
-	if weightnorm:
-		return WeightnormConvolution1D(in_channels, out_channels, ksize, stride=stride, pad=pad, initialV=initialW)
-	return L.ConvolutionND(1, in_channels, out_channels, ksize, stride=stride, pad=pad, initialW=initialW)
-
 # Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
 # https://arxiv.org/abs/1701.02720
 class ZhangModel(Chain):
@@ -105,8 +100,8 @@ class ZhangModel(Chain):
 		else:
 			self.add_link("fc0", Convolution2D(ndim_h, ndim_fc, (kernel_height, 1), stride=1, pad=0))
 			for i in xrange(num_fc_layers - 2):
-				self.add_link("fc{}".format(i + 1), Convolution1D(ndim_fc, ndim_fc, ksize=1, stride=1, pad=0))
-			self.add_link("fc{}".format(num_fc_layers - 1), Convolution1D(ndim_fc, vocab_size, ksize=1, stride=1, pad=0))
+				self.add_link("fc{}".format(i + 1), Convolution2D(ndim_fc, ndim_fc, ksize=1, stride=1, pad=0))
+			self.add_link("fc{}".format(num_fc_layers - 1), Convolution2D(ndim_fc, vocab_size, ksize=1, stride=1, pad=0))
 
 	def get_conv_layer(self, index):
 		return getattr(self, "conv{}".format(index))
@@ -186,7 +181,7 @@ class ZhangModel(Chain):
 
 		if return_last:
 			out_data = out_data[..., -1, None]
-		
+
 		### Fully-connected Layers ###
 		for layer_index in xrange(self.num_fc_layers - 1):
 			out_data = self.forward_fc_layer(layer_index, out_data)
@@ -205,7 +200,8 @@ class ZhangModel(Chain):
 			out_data = F.reshape(out_data, (batchsize, -1))
 			out_data = F.split_axis(out_data, seq_length, axis=1)
 		else:
-			out_data = F.swapaxes(out_data, 1, 2)
+			out_data = F.swapaxes(out_data, 1, 3)
+			out_data = F.squeeze(out_data, axis=2)
 
 		return out_data
 

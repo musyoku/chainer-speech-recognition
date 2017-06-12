@@ -56,6 +56,7 @@ def main():
 	# optimizer
 	optimizer = optimizers.Adam(args.learning_rate, 0.9)
 	optimizer.setup(model)
+	optimizer.add_hook(chainer.optimizer.GradientClipping(1))
 	
 
 	for epoch in xrange(1, args.total_epoch + 1):
@@ -77,10 +78,12 @@ def main():
 				y_batch = model(x_batch)	# list of variables
 
 				# compute loss
-				loss = F.connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
-				optimizer.update(lossfun=lambda: loss)
+				loss = F.connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch, reduce="no")
+				loss_value = float(xp.sum(loss.data))
+				assert loss_value == loss_value
+				optimizer.update(lossfun=lambda: F.sum(loss))
 
-				sum_loss += float(loss.data)
+				sum_loss += loss_value
 
 		# evaluate
 		with chainer.using_config("train", False):
@@ -115,7 +118,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--total-epoch", "-epoch", type=int, default=100)
 	parser.add_argument("--batchsize", "-b", type=int, default=32)
-	parser.add_argument("--learning-rate", "-lr", type=float, default=0.01)
+	parser.add_argument("--learning-rate", "-lr", type=float, default=0.001)
 	parser.add_argument("--vocab-size", "-vocab", type=int, default=50)
 	parser.add_argument("--num-conv-layers", "-conv", type=int, default=1)
 	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
