@@ -9,7 +9,6 @@ from six.moves import xrange
 from chainer import Chain, serializers, initializers
 sys.path.append("../../")
 from convolution_2d import Convolution2D as WeightnormConvolution2D
-from convolution_1d import Convolution1D as WeightnormConvolution1D
 
 def save_model(dirname, model):
 	model_filename = dirname + "/model.hdf5"

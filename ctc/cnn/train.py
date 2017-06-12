@@ -190,7 +190,7 @@ def main(args):
 			for itr in xrange(1, total_iterations_train + 1):
 				bucket_idx = int(np.random.choice(np.arange(len(buckets_train)), size=1, p=buckets_distribution))
 				bucket = buckets_train[bucket_idx]
-				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize, ID_PAD)
+				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize, ID_BLANK)
 				feature_dim = x_batch.shape[1]
 
 				# 平均と分散を計算
@@ -216,9 +216,7 @@ def main(args):
 				loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
 				# 更新
-				model.cleargrads()
-				loss.backward()
-				optimizer.update()
+				optimizer.update(lossfun=lambda: loss)
 
 				buckets_train[bucket_idx] = np.roll(bucket, args.batchsize)	# ずらす
 
@@ -248,7 +246,7 @@ def main(args):
 				bucket = buckets_train[bucket_idx]
 				sum_error = 0
 
-				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, ID_PAD)
+				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, ID_BLANK)
 				x_batch = (x_batch - running_mean) / running_stddev
 
 				if model.xp is cuda.cupy:
