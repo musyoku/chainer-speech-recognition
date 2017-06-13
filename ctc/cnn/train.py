@@ -2,7 +2,7 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import sys, argparse, time
+import sys, argparse, time, cupy, math
 import chainer
 import numpy as np
 import chainer.functions as F
@@ -69,13 +69,13 @@ def decay_learning_rate(opt, factor, final_value):
 		return
 	raise NotImplementationError()
 
-def main(args):
+def main():
 	wav_paths = [
-		"/home/stark/sandbox/CSJ/WAV/core/",
+		"/home/aibo/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/stark/sandbox/CSJ_/core/",
+		"/home/aibo/sandbox/CSJ_/core/",
 	]
 
 	sampling_rate = 16000
@@ -95,7 +95,7 @@ def main(args):
 	chainer.global_config.using_delta_delta = True
 
 	pair = load_audio_and_transcription(wav_paths, transcription_paths)
-	vocab, vocab_inv, ID_PAD, ID_BLANK = get_vocab()
+	vocab, vocab_inv, BLANK = get_vocab()
 	vocab_size = len(vocab)
 	print_bold("data	#")
 	print("wav	{}".format(len(pair)))
@@ -164,61 +164,91 @@ def main(args):
 		model = ZhangModel(vocab_size, args.num_conv_layers, args.num_fc_layers, args.ndim_audio_features, args.ndim_h, dropout=args.dropout, weightnorm=args.weightnorm, wgain=args.wgain, num_mel_filters=num_mel_filters)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
-		model.to_gpu()
+		model.to_gpu(args.gpu_device)
+	xp = model.xp
 
 	# optimizer
 	optimizer = get_optimizer(args.optimizer, args.learning_rate, args.momentum)
 	optimizer.setup(model)
 	optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
-	optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
+	# optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
 	final_learning_rate = 1e-4
 	total_time = 0
 
 	running_mean = 0
-	running_stddev = 0
+	running_std = 0
 	running_z = 0
 
 	np.random.seed(0)
+	xp.random.seed(0)
 
-	for epoch in xrange(1, args.epoch + 1):
+	for epoch in xrange(1, args.total_epoch + 1):
 		print("Epoch", epoch)
 		start_time = time.time()
 		sum_loss = 0
 		
-		with chainer.using_config("train", True):
+		with chainer.using_config("debug", True):
 
 			for itr in xrange(1, total_iterations_train + 1):
 				bucket_idx = int(np.random.choice(np.arange(len(buckets_train)), size=1, p=buckets_distribution))
 				bucket = buckets_train[bucket_idx]
-				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize, ID_BLANK)
+				np.random.shuffle(bucket)
+
+				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize, BLANK)
 				feature_dim = x_batch.shape[1]
 
 				# 平均と分散を計算
 				# 本来は学習前にデータ全体の平均・分散を計算すべきだが、データ拡大を用いるため、逐一更新していくことにする
-				mean_x_batch = np.mean(x_batch, axis=(0, 3)).reshape((1, feature_dim, -1, 1))
-				stddev_x_batch = np.std(x_batch, axis=(0, 3)).reshape((1, feature_dim, -1, 1))
+				mean_x_batch = np.mean(x_batch, axis=(0, 3), keepdims=True)
+				stddev_x_batch = np.std(x_batch, axis=(0, 3), keepdims=True)
 				running_mean = running_mean * (running_z / (running_z + 1)) + mean_x_batch / (running_z + 1)	# 正規化定数が+1されることに注意
-				running_stddev = running_stddev * (running_z / (running_z + 1)) + stddev_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
+				running_std = running_std * (running_z / (running_z + 1)) + stddev_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
 				running_z += 1
 
 				# 正規化
-				x_batch = (x_batch - running_mean) / running_stddev
+				x_batch = (x_batch - running_mean) / running_std
+
+
+				def generate_data(batchsize):
+					x_batch = np.random.normal(size=(batchsize, 3, 40, 100))
+					t_batch = np.zeros((batchsize, 100), dtype=np.int32)
+					true_data = np.random.normal(size=(82, 3, 40))
+					t_length_batch = np.zeros((batchsize,), dtype=np.int32)
+					x_length_batch = np.zeros((batchsize,), dtype=np.int32)
+
+					for data_idx in xrange(len(x_batch)):
+						num_tokens = np.random.randint(1, high=10 + 1, size=1)
+						x_length = np.random.randint(num_tokens, high=100 + 1, size=1)
+						indices = np.random.choice(np.arange(x_length), size=num_tokens, replace=False)
+						tokens = np.random.choice(np.arange(1, 82), size=num_tokens)
+						for token_idx, token in zip(indices, tokens): 
+							x_batch[data_idx, ..., token_idx] = true_data[token]
+							t_batch[data_idx, token_idx] = token
+						t_length_batch[data_idx] = num_tokens
+						x_length_batch[data_idx] = x_length
+
+					for data_idx in xrange(len(x_batch)):
+						t = t_batch[data_idx]
+						t = t[t > 0]
+						t_batch[data_idx] = BLANK
+						t_batch[data_idx, :len(t)] = t
+
+					return x_batch, t_batch[..., :10], x_length_batch, t_length_batch
+				x_batch, t_batch, x_length_batch, t_length_batch = generate_data(args.batchsize)
 
 				# GPU
-				if model.xp is cuda.cupy:
+				if xp is cupy:
 					x_batch = cuda.to_gpu(x_batch.astype(np.float32))
-					t_batch = cuda.to_gpu(np.asarray(t_batch).astype(np.int32))
+					t_batch = cuda.to_gpu(t_batch.astype(np.int32))
 					x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
 					t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
 				# 誤差の計算
 				y_batch = model(x_batch)	# list of variables
-				loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+				loss = F.connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
 
 				# 更新
 				optimizer.update(lossfun=lambda: loss)
-
-				buckets_train[bucket_idx] = np.roll(bucket, args.batchsize)	# ずらす
 
 				loss = float(loss.data)
 				if loss != loss:
@@ -228,10 +258,6 @@ def main(args):
 				sys.stdout.write("\r" + stdout.CLEAR)
 				sys.stdout.write("\riteration {}/{}".format(itr, total_iterations_train))
 				sys.stdout.flush()
-
-		# 再シャッフル
-		for bucket in buckets_train:
-			np.random.shuffle(bucket)
 
 		sys.stdout.write("\r" + stdout.CLEAR)
 		sys.stdout.flush()
@@ -246,8 +272,8 @@ def main(args):
 				bucket = buckets_train[bucket_idx]
 				sum_error = 0
 
-				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, ID_BLANK)
-				x_batch = (x_batch - running_mean) / running_stddev
+				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, BLANK)
+				x_batch = (x_batch - running_mean) / running_std
 
 				if model.xp is cuda.cupy:
 					x_batch = cuda.to_gpu(x_batch.astype(np.float32))
@@ -268,18 +294,14 @@ def main(args):
 						prob = y_sequence[t]
 						assert prob.size == vocab_size
 						char_id = int(xp.argmax(prob))
-						if char_id == ID_PAD:
-							continue
-						if char_id == ID_BLANK:
+						if char_id == BLANK:
 							continue
 						pred_ids.append(char_id)
 
 					target_ids = []
 					for t in xrange(t_sequence.size):
 						char_id = int(t_sequence[t])
-						if char_id == ID_PAD:
-							continue
-						if char_id == ID_BLANK:
+						if char_id == BLANK:
 							continue
 						target_ids.append(char_id)
 
@@ -295,8 +317,8 @@ def main(args):
 				sum_error = 0
 
 				for itr in xrange(total_iterations_dev):
-					x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, ID_PAD)
-					x_batch = (x_batch - running_mean) / running_stddev
+					x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, BLANK)
+					x_batch = (x_batch - running_mean) / running_std
 
 					if model.xp is cuda.cupy:
 						x_batch = cuda.to_gpu(x_batch.astype(np.float32))
@@ -317,18 +339,14 @@ def main(args):
 							prob = y_sequence[t]
 							assert prob.size == vocab_size
 							char_id = int(xp.argmax(prob))
-							if char_id == ID_PAD:
-								continue
-							if char_id == ID_BLANK:
+							if char_id == BLANK:
 								continue
 							pred_ids.append(char_id)
 
 						target_ids = []
 						for t in xrange(t_sequence.size):
 							char_id = int(t_sequence[t])
-							if char_id == ID_PAD:
-								continue
-							if char_id == ID_BLANK:
+							if char_id == BLANK:
 								continue
 							target_ids.append(char_id)
 
@@ -361,7 +379,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--batchsize", "-b", type=int, default=8)
 	parser.add_argument("--batchsize-dev", "-bd", type=int, default=64)
-	parser.add_argument("--epoch", "-e", type=int, default=1000)
+	parser.add_argument("--total-epoch", "-e", type=int, default=1000)
 	parser.add_argument("--grad-clip", "-gc", type=float, default=1) 
 	parser.add_argument("--weight-decay", "-wd", type=float, default=1e-5) 
 	parser.add_argument("--learning-rate", "-lr", type=float, default=0.001)
@@ -370,7 +388,7 @@ if __name__ == "__main__":
 	parser.add_argument("--optimizer", "-opt", type=str, default="adam")
 	
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
-	parser.add_argument("--ndim-h", "-nh", type=int, default=320)
+	parser.add_argument("--ndim-h", "-nh", type=int, default=128)
 	parser.add_argument("--num-conv-layers", "-conv", type=int, default=2)
 	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
 	parser.add_argument("--wgain", "-w", type=float, default=1)
@@ -387,4 +405,4 @@ if __name__ == "__main__":
 	parser.add_argument("--dev-filename", "-dev", default=None)
 	args = parser.parse_args()
 
-	main(args)
+	main()

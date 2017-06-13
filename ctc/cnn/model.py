@@ -130,8 +130,8 @@ class ZhangModel(Chain):
 		seq_length = out_data.shape[3]
 
 		# 時間方向（軸3）とミニバッチの平均は取らない
-		mean_batch = xp.mean(out_data.data, axis=(1, 2)).reshape((batchsize, 1, 1, seq_length))
-		stddev_batch = xp.std(out_data.data, axis=(1, 2)).reshape((batchsize, 1, 1, seq_length)) + eps
+		mean_batch = xp.mean(out_data.data, axis=(1, 2), keepdims=True)
+		stddev_batch = xp.std(out_data.data, axis=(1, 2), keepdims=True) + eps
 
 		out_data = (out_data - mean_batch) / stddev_batch
 
@@ -146,12 +146,10 @@ class ZhangModel(Chain):
 		eps = 1e-4
 
 		# 時間方向（軸1）とミニバッチの平均は取らない
-		out_data = F.reshape(out_data, (batchsize, seq_length, -1))
-		mean_batch = xp.mean(out_data.data, axis=2).reshape((batchsize, seq_length, 1))
-		stddev_batch = xp.std(out_data.data, axis=2).reshape((batchsize, seq_length, 1)) + eps
+		mean_batch = xp.mean(out_data.data, axis=(1, 2), keepdims=True)
+		stddev_batch = xp.std(out_data.data, axis=(1, 2), keepdims=True) + eps
 
 		out_data = (out_data - mean_batch) / stddev_batch
-		out_data = F.reshape(out_data, (batchsize * seq_length, -1))
 
 		return out_data
 

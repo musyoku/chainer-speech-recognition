@@ -32,6 +32,7 @@ def generate_data():
 	true_data = np.random.normal(size=(args.vocab_size, 3, 40))
 	t_length_batch = np.zeros((args.dataset_size,), dtype=np.int32)
 	x_length_batch = np.zeros((args.dataset_size,), dtype=np.int32)
+
 	for data_idx in xrange(len(x_batch)):
 		num_tokens = np.random.randint(1, high=args.true_sequence_length + 1, size=1)
 		x_length = np.random.randint(num_tokens, high=args.sequence_length + 1, size=1)
@@ -42,12 +43,14 @@ def generate_data():
 			t_batch[data_idx, token_idx] = token
 		t_length_batch[data_idx] = num_tokens
 		x_length_batch[data_idx] = x_length
+
 	for data_idx in xrange(len(x_batch)):
 		t = t_batch[data_idx]
 		t = t[t > 0]
 		t_batch[data_idx] = BLANK
 		t_batch[data_idx, :len(t)] = t
-	return x_batch, t_batch, x_length_batch, t_length_batch
+
+	return x_batch, t_batch[..., :args.true_sequence_length], x_length_batch, t_length_batch
 
 def main():
 	model = ZhangModel(args.vocab_size, args.num_conv_layers, args.num_fc_layers, 3, args.ndim_h)
@@ -70,7 +73,7 @@ def main():
 	for epoch in xrange(1, args.total_epoch + 1):
 		# train loop
 		sum_loss = 0
-		with chainer.using_config("train", True):
+		with chainer.using_config("debug", True):
 			for itr in xrange(1, total_loop + 1):
 				# sample minibatch
 				np.random.shuffle(train_indices)
@@ -78,6 +81,9 @@ def main():
 				t_batch = train_labels[train_indices[:args.batchsize]]
 				x_length_batch = train_data_length[train_indices[:args.batchsize]]
 				t_length_batch = train_label_length[train_indices[:args.batchsize]]
+
+				x_max_length = np.amax(x_length_batch)
+				x_batch = x_batch[..., :x_max_length]
 
 				# GPU
 				if xp is cupy:
@@ -141,7 +147,7 @@ if __name__ == "__main__":
 	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
 	parser.add_argument("--ndim-h", "-nh", type=int, default=128)
 	parser.add_argument("--ndim-fc", "-nf", type=int, default=128)
-	parser.add_argument("--true-sequence-length", "-tseq", type=int, default=5)
+	parser.add_argument("--true-sequence-length", "-tseq", type=int, default=10)
 	parser.add_argument("--sequence-length", "-seq", type=int, default=100)
 	parser.add_argument("--dataset-size", "-size", type=int, default=500)
 	parser.add_argument("--gpu-device", "-g", type=int, default=0) 
