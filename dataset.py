@@ -10,6 +10,7 @@ from python_speech_features import fbank
 
 def get_vocab():
 	characters = [
+		u"_",	# blank
 		u"あ",u"い",u"う",u"え",u"お",
 		u"か",u"き",u"く",u"け",u"こ",
 		u"さ",u"し",u"す",u"せ",u"そ",
@@ -29,8 +30,6 @@ def get_vocab():
 		u"ゃ",u"ゅ",u"ょ",
 		u"っ",
 		u"ー",
-		u"_",	# blank
-		u"@",	# padding
 	]
 
 	vocab = {}
@@ -41,12 +40,11 @@ def get_vocab():
 	for char, char_id in vocab.items():
 		vocab_inv[char_id] = char
 
-	id_pad = len(characters) - 1
-	id_blank = len(characters) - 2
+	id_blank = 0
 
-	return vocab, vocab_inv, id_pad, id_blank
+	return vocab, vocab_inv, id_blank
 
-def get_minibatch(bucket, dataset, batchsize, id_pad):
+def get_minibatch(bucket, dataset, batchsize, id_blank):
 	assert len(bucket) >= batchsize
 	config = chainer.config
 	indices = bucket[:batchsize]
@@ -65,24 +63,38 @@ def get_minibatch(bucket, dataset, batchsize, id_pad):
 			max_x_width = logmel.shape[1]
 
 	x_batch = np.zeros((batchsize, 3, config.num_mel_filters, max_x_width), dtype=np.float32)
-	t_batch = np.full((batchsize, max_t_width), id_pad, dtype=np.int32)
+	t_batch = np.full((batchsize, max_t_width), id_blank, dtype=np.int32)
 	x_valid_length = []
 	t_valid_length = []
 
 	for batch_idx, data_idx in enumerate(indices):
 		data = dataset[data_idx]
 		signal, sentence, logmel, delta, delta_delta = data
+		x_length = logmel.shape[1]
+		t_length = len(sentence)
 
 		# x
 		x_batch[batch_idx, 0, :, -logmel.shape[1]:] = logmel
 		x_batch[batch_idx, 1, :, -delta.shape[1]:] = delta
 		x_batch[batch_idx, 2, :, -delta_delta.shape[1]:] = delta_delta
-		x_valid_length.append(logmel.shape[1])
+		x_valid_length.append(x_length)
+
+		# CTCが適用可能かチェック
+		num_trans_same_label = np.count_nonzero(sentence == np.roll(sentence, 1))
+		required_length = t_length * 2 + 1 + num_trans_same_label
+		if x_length < required_length:
+			print(sentence)
+			print(x_length)
+			print(required_length)
+			print(t_length)
+
+			sentence = []
+			t_length = 0
 
 		# t
 		for pos, char_id in enumerate(sentence):
 			t_batch[batch_idx, pos] = char_id
-		t_valid_length.append(len(sentence))
+		t_valid_length.append(t_length)
 
 	return x_batch, x_valid_length, t_batch, t_valid_length
 

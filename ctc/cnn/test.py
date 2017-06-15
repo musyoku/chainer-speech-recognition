@@ -1,11 +1,13 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import chainer, argparse, math, cupy
+import chainer, argparse, math, cupy, sys
 import numpy as np
 from chainer import optimizers, cuda
 from chainer import functions as F
 from model import ZhangModel
+sys.path.append("../../")
+from ctc import connectionist_temporal_classification
 
 BLANK = 0
 
@@ -36,8 +38,13 @@ def generate_data():
 	for data_idx in xrange(len(x_batch)):
 		num_tokens = np.random.randint(1, high=args.true_sequence_length + 1, size=1)
 		x_length = np.random.randint(num_tokens, high=args.sequence_length + 1, size=1)
-		indices = np.random.choice(np.arange(x_length), size=num_tokens, replace=False)
 		tokens = np.random.choice(np.arange(1, args.vocab_size), size=num_tokens)
+
+		num_trans_same_label = np.count_nonzero(tokens == np.roll(tokens, 1))
+		x_length += max(0, num_tokens + num_trans_same_label - x_length)
+		assert x_length <= args.sequence_length
+
+		indices = np.random.choice(np.arange(x_length), size=num_tokens, replace=False)
 		for token_idx, token in zip(indices, tokens): 
 			x_batch[data_idx, ..., token_idx] = true_data[token]
 			t_batch[data_idx, token_idx] = token
@@ -53,7 +60,9 @@ def generate_data():
 	return x_batch, t_batch[..., :args.true_sequence_length], x_length_batch, t_length_batch
 
 def main():
-	model = ZhangModel(args.vocab_size, args.num_conv_layers, args.num_fc_layers, 3, args.ndim_h)
+	np.random.seed(3)
+
+	model = ZhangModel(args.vocab_size, args.num_conv_layers, args.num_fc_layers, 3, args.ndim_h, layernorm=True)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu()
@@ -73,7 +82,7 @@ def main():
 	for epoch in xrange(1, args.total_epoch + 1):
 		# train loop
 		sum_loss = 0
-		with chainer.using_config("debug", True):
+		with chainer.using_config("train", True):
 			for itr in xrange(1, total_loop + 1):
 				# sample minibatch
 				np.random.shuffle(train_indices)
@@ -92,11 +101,22 @@ def main():
 					x_length_batch = cuda.to_gpu(x_length_batch.astype(xp.int32))
 					t_length_batch = cuda.to_gpu(t_length_batch.astype(xp.int32))
 
+				# t_batch[0, 1] = 2
+				# if t_length_batch.size == 4:
+				# 	t_batch[1, 1:] = 0
+				# 	t_length_batch[1] = 1
+				# 	t_batch[2, 2] = 0
+				# 	t_length_batch[2] = 2
+				# 	t_batch[3, 1] = 2
+				# print(x_length_batch)
+				# print(t_batch)
+				# print(t_length_batch)
+
 				# forward
 				y_batch = model(x_batch)	# list of variables
 
 				# compute loss
-				loss = F.connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch, reduce="no")
+				loss = connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch, reduce="no")
 				loss_value = float(xp.sum(loss.data))
 				assert loss_value == loss_value
 				optimizer.update(lossfun=lambda: F.sum(loss))
