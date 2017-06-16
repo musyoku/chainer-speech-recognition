@@ -135,15 +135,15 @@ class ZhangModel(Chain):
 		kernel_height = int(math.ceil((num_mel_filters - 2) / 3))
 		if num_fc_layers == 1:
 			self.add_link("fc0", Convolution2D(ndim_h, vocab_size, (kernel_height, 1), stride=1, pad=0))
-			self.add_link("fc_norm0", LayerNormalization((vocab_size,)))
+			self.add_link("fc_norm0", LayerNormalization((ndim_h,)))
 		else:
 			self.add_link("fc0", Convolution2D(ndim_h, ndim_fc, (kernel_height, 1), stride=1, pad=0))
-			self.add_link("fc_norm0", LayerNormalization((ndim_fc,)))
+			self.add_link("fc_norm0", LayerNormalization((ndim_h,)))
 			for i in xrange(num_fc_layers - 2):
 				self.add_link("fc{}".format(i + 1), Convolution2D(ndim_fc, ndim_fc, ksize=1, stride=1, pad=0))
 				self.add_link("fc_norm{}".format(i + 1), LayerNormalization((ndim_fc,)))
 			self.add_link("fc{}".format(num_fc_layers - 1), Convolution2D(ndim_fc, vocab_size, ksize=1, stride=1, pad=0))
-			self.add_link("fc_norm{}".format(num_fc_layers - 1), LayerNormalization((vocab_size,)))
+			self.add_link("fc_norm{}".format(num_fc_layers - 1), LayerNormalization((ndim_fc,)))
 
 	def get_conv_layer(self, index):
 		return getattr(self, "conv{}".format(index))
@@ -214,13 +214,18 @@ class ZhangModel(Chain):
 
 		### Conv Layers ###
 		for layer_index in xrange(self.num_conv_layers):
-			out_data = self.forward_conv_layer(layer_index, out_data)
-			out_data = F.relu(out_data)
+			if self.using_layernorm:
+				out_data = self.normalize_conv_layer(layer_index, out_data)
+				out_data = F.relu(out_data)
+				out_data = self.forward_conv_layer(layer_index, out_data)
+			else:
+				out_data = self.forward_conv_layer(layer_index, out_data)
+				out_data = F.relu(out_data)
+			# out_data = F.relu(out_data)
 			if self.using_dropout:
 				out_data = F.dropout(out_data, ratio=self.dropout)
 			if self.using_residual:
 				out_data += residual_input
-			out_data = self.normalize_conv_layer(layer_index, out_data)
 			if self.using_residual:
 				residual_input = out_data
 
@@ -230,20 +235,24 @@ class ZhangModel(Chain):
 		### Fully-connected Layers ###
 		residual_input = 0
 		for layer_index in xrange(self.num_fc_layers - 1):
-			out_data = self.forward_fc_layer(layer_index, out_data)
-			out_data = F.relu(out_data)
+			if self.using_layernorm:
+				out_data = self.normalize_fc_layer(layer_index, out_data, batchsize, seq_length)
+				out_data = F.relu(out_data)
+				out_data = self.forward_fc_layer(layer_index, out_data)
+			else:
+				out_data = self.forward_fc_layer(layer_index, out_data)
+				out_data = F.relu(out_data)
 			if self.using_dropout:
 				out_data = F.dropout(out_data, ratio=self.dropout)
 			if self.using_residual:
 				out_data += residual_input
-			out_data = self.normalize_fc_layer(layer_index, out_data, batchsize, seq_length)
 			if self.using_residual:
 				residual_input = out_data
 
 		# 最後のFC層には活性化関数を通さないので別に処理
 		layer_index = self.num_fc_layers - 1
+		out_data = self.normalize_fc_layer(layer_index, out_data, batchsize, seq_length)
 		out_data = self.forward_fc_layer(layer_index, out_data)
-		# out_data = self.normalize_fc_layer(layer_index, out_data, batchsize, seq_length)
 
 		xp = self.xp
 		print(xp.mean(out_data.data), xp.std(out_data.data), xp.amax(out_data.data), xp.amin(out_data.data))

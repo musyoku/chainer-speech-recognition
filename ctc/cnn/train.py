@@ -346,8 +346,8 @@ def main():
 		print("Epoch {} done in {} min".format(epoch, int(elapsed_time / 60)))
 		sys.stdout.write(stdout.CLEAR)
 		print("	loss:", sum_loss / total_iterations_train)
-		print("	CER (train):", train_error)
-		print("	CER (dev):", dev_error)
+		print("	CER (train):	", train_error)
+		print("	CER (dev):	", dev_error)
 		total_time += elapsed_time
 
 
