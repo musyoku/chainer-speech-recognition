@@ -62,7 +62,7 @@ def generate_data():
 def main():
 	np.random.seed(3)
 
-	model = ZhangModel(args.vocab_size, args.num_conv_layers, args.num_fc_layers, 3, args.ndim_h, layernorm=True)
+	model = ZhangModel(args.vocab_size, args.num_conv_layers, args.num_fc_layers, 3, args.ndim_h, dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu()
@@ -171,5 +171,9 @@ if __name__ == "__main__":
 	parser.add_argument("--sequence-length", "-seq", type=int, default=100)
 	parser.add_argument("--dataset-size", "-size", type=int, default=500)
 	parser.add_argument("--gpu-device", "-g", type=int, default=0) 
+	parser.add_argument("--dropout", "-dropout", type=float, default=0)
+	parser.add_argument("--weightnorm", "-weightnorm", default=False, action="store_true")
+	parser.add_argument("--layernorm", "-layernorm", default=False, action="store_true")
+	parser.add_argument("--residual", "-residual", default=False, action="store_true")
 	args = parser.parse_args()
 	main()

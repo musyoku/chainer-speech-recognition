@@ -103,7 +103,7 @@ class LayerNormalization(chainer.link.Link):
 # Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
 # https://arxiv.org/abs/1701.02720
 class ZhangModel(Chain):
-	def __init__(self, vocab_size, num_conv_layers, num_fc_layers, ndim_audio_features, ndim_h, ndim_fc=1024, kernel_size=(3, 5), dropout=0, layernorm=False, weightnorm=False, wgain=1, num_mel_filters=40):
+	def __init__(self, vocab_size, num_conv_layers, num_fc_layers, ndim_audio_features, ndim_h, ndim_fc=1024, kernel_size=(3, 5), dropout=0, layernorm=False, weightnorm=False, residual=False, wgain=1, num_mel_filters=40):
 		super(ZhangModel, self).__init__()
 		assert num_conv_layers > 0
 		assert num_fc_layers > 0
@@ -114,11 +114,13 @@ class ZhangModel(Chain):
 		self.num_fc_layers = num_fc_layers
 		self.ndim_audio_features = ndim_audio_features
 		self.ndim_h = ndim_h
+		self.ndim_fc = ndim_fc
 		self.kernel_size = kernel_size
 		self.weightnorm = weightnorm
 		self.using_layernorm = True if layernorm else False
 		self.dropout = dropout
 		self.using_dropout = True if dropout > 0 else False
+		self.using_residual = True if residual else False
 		self.wgain = wgain
 
 		wstd = math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])
@@ -186,19 +188,6 @@ class ZhangModel(Chain):
 		out_data = norm(out_data)
 		return out_data
 
-		xp = self.xp
-		eps = 1e-8
-		batchsize = out_data.shape[0]
-		seq_length = out_data.shape[3]
-
-		# 時間方向（軸3）とミニバッチの平均は取らない
-		mean_batch = xp.mean(out_data.data, axis=(1, 2), keepdims=True)
-		std_batch = xp.std(out_data.data, axis=(1, 2), keepdims=True) + eps
-
-		out_data = (out_data - mean_batch) / std_batch
-
-		return out_data
-
 	# Layer Normalization
 	# https://arxiv.org/abs/1607.06450
 	def normalize_fc_layer(self, layer_index, out_data, batchsize, seq_length):
@@ -207,17 +196,6 @@ class ZhangModel(Chain):
 
 		norm = self.get_fc_norm_layer(layer_index)
 		out_data = norm(out_data)
-		return out_data
-		
-		xp = self.xp
-		eps = 1e-8
-
-		# 時間方向（軸1）とミニバッチの平均は取らない
-		mean_batch = xp.mean(out_data.data, axis=(1, 2), keepdims=True)
-		std_batch = xp.std(out_data.data, axis=(1, 2), keepdims=True) + eps
-
-		out_data = (out_data - mean_batch) / std_batch
-
 		return out_data
 
 	def __call__(self, X, return_last=False, split_into_variables=True):
@@ -237,28 +215,39 @@ class ZhangModel(Chain):
 		### Conv Layers ###
 		for layer_index in xrange(self.num_conv_layers):
 			out_data = self.forward_conv_layer(layer_index, out_data)
-			out_data = self.normalize_conv_layer(layer_index, out_data)
 			out_data = F.relu(out_data)
 			if self.using_dropout:
 				out_data = F.dropout(out_data, ratio=self.dropout)
-			# out_data += residual_input
-			# residual_input = out_data
+			if self.using_residual:
+				out_data += residual_input
+			out_data = self.normalize_conv_layer(layer_index, out_data)
+			if self.using_residual:
+				residual_input = out_data
 
 		if return_last:
 			out_data = out_data[..., -1, None]
 
 		### Fully-connected Layers ###
+		residual_input = 0
 		for layer_index in xrange(self.num_fc_layers - 1):
 			out_data = self.forward_fc_layer(layer_index, out_data)
-			out_data = self.normalize_fc_layer(layer_index, out_data, batchsize, seq_length)
 			out_data = F.relu(out_data)
 			if self.using_dropout:
 				out_data = F.dropout(out_data, ratio=self.dropout)
+			if self.using_residual:
+				out_data += residual_input
+			out_data = self.normalize_fc_layer(layer_index, out_data, batchsize, seq_length)
+			if self.using_residual:
+				residual_input = out_data
 
 		# 最後のFC層には活性化関数を通さないので別に処理
 		layer_index = self.num_fc_layers - 1
 		out_data = self.forward_fc_layer(layer_index, out_data)
 		# out_data = self.normalize_fc_layer(layer_index, out_data, batchsize, seq_length)
+
+		xp = self.xp
+		print(xp.mean(out_data.data), xp.std(out_data.data), xp.amax(out_data.data), xp.amin(out_data.data))
+
 
 		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある
 		if split_into_variables:
