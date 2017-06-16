@@ -83,13 +83,9 @@ def get_minibatch(bucket, dataset, batchsize, id_blank):
 		num_trans_same_label = np.count_nonzero(sentence == np.roll(sentence, 1))
 		required_length = t_length * 2 + 1 + num_trans_same_label
 		if x_length < required_length:
-			print(sentence)
-			print(x_length)
-			print(required_length)
-			print(t_length)
-
-			sentence = []
-			t_length = 0
+			possibole_t_length = (x_length - num_trans_same_label - 1) // 2
+			sentence = sentence[:possibole_t_length]
+			t_length = len(sentence)
 
 		# t
 		for pos, char_id in enumerate(sentence):

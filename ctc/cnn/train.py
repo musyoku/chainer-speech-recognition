@@ -41,6 +41,8 @@ def get_optimizer(name, lr, momentum):
 	raise NotImplementationError()
 
 def compute_character_error_rate(r, h):
+	if len(r) == 0:
+		return len(h)
 	d = np.zeros((len(r) + 1) * (len(h) + 1), dtype=np.uint8).reshape((len(r) + 1, len(h) + 1))
 	for i in xrange(len(r) + 1):
 		for j in xrange(len(h) + 1):
@@ -70,125 +72,13 @@ def decay_learning_rate(opt, factor, final_value):
 		return
 	raise NotImplementationError()
 
-# def generate_data():
-# 	x_batch = np.random.normal(size=(500, 3, 40, 100))
-# 	t_batch = np.zeros((500, 100), dtype=np.int32)
-# 	true_data = np.random.normal(size=(83, 3, 40))
-# 	t_length_batch = np.zeros((500,), dtype=np.int32)
-# 	x_length_batch = np.zeros((500,), dtype=np.int32)
-
-# 	for data_idx in xrange(len(x_batch)):
-# 		num_tokens = np.random.randint(1, high=10 + 1, size=1)
-# 		x_length = np.random.randint(num_tokens, high=100 + 1, size=1)
-# 		indices = np.random.choice(np.arange(x_length), size=num_tokens, replace=False)
-# 		tokens = np.random.choice(np.arange(1, 83), size=num_tokens)
-# 		for token_idx, token in zip(indices, tokens): 
-# 			x_batch[data_idx, ..., token_idx] = true_data[token]
-# 			t_batch[data_idx, token_idx] = token
-# 		t_length_batch[data_idx] = num_tokens
-# 		x_length_batch[data_idx] = x_length
-
-# 	for data_idx in xrange(len(x_batch)):
-# 		t = t_batch[data_idx]
-# 		t = t[t > 0]
-# 		t_batch[data_idx] = 0
-# 		t_batch[data_idx, :len(t)] = t
-
-# 	return x_batch, t_batch[..., :10], x_length_batch, t_length_batch
-
-# def main():
-# 	model = ZhangModel(83, args.num_conv_layers, args.num_fc_layers, 3, args.ndim_h)
-# 	if args.gpu_device >= 0:
-# 		chainer.cuda.get_device(args.gpu_device).use()
-# 		model.to_gpu()
-
-# 	train_data, train_labels, train_data_length, train_label_length = generate_data()
-# 	total_loop = int(math.ceil(len(train_data) / args.batchsize))
-# 	train_indices = np.arange(len(train_data), dtype=int)
-
-# 	xp = model.xp
-
-# 	# optimizer
-# 	optimizer = optimizers.Adam(args.learning_rate, 0.9)
-# 	optimizer.setup(model)
-# 	optimizer.add_hook(chainer.optimizer.GradientClipping(1))
-	
-
-# 	for epoch in xrange(1, args.total_epoch + 1):
-# 		# train loop
-# 		sum_loss = 0
-# 		with chainer.using_config("debug", True):
-# 			for itr in xrange(1, total_loop + 1):
-# 				# sample minibatch
-# 				np.random.shuffle(train_indices)
-# 				x_batch = train_data[train_indices[:args.batchsize]]
-# 				t_batch = train_labels[train_indices[:args.batchsize]]
-# 				x_length_batch = train_data_length[train_indices[:args.batchsize]]
-# 				t_length_batch = train_label_length[train_indices[:args.batchsize]]
-
-# 				x_max_length = np.amax(x_length_batch)
-# 				x_batch = x_batch[..., :x_max_length]
-
-# 				# GPU
-# 				if xp is cupy:
-# 					x_batch = cuda.to_gpu(x_batch.astype(xp.float32))
-# 					t_batch = cuda.to_gpu(t_batch.astype(xp.int32))
-# 					x_length_batch = cuda.to_gpu(x_length_batch.astype(xp.int32))
-# 					t_length_batch = cuda.to_gpu(t_length_batch.astype(xp.int32))
-
-# 				# forward
-# 				y_batch = model(x_batch)	# list of variables
-
-# 				# compute loss
-# 				loss = F.connectionist_temporal_classification(y_batch, t_batch, 0, x_length_batch, t_length_batch, reduce="no")
-# 				loss_value = float(xp.sum(loss.data))
-# 				assert loss_value == loss_value
-# 				optimizer.update(lossfun=lambda: F.sum(loss))
-
-# 				sum_loss += loss_value
-
-# 		# evaluate
-# 		with chainer.using_config("train", False):
-# 			# sample minibatch
-# 			np.random.shuffle(train_indices)
-# 			x_batch = train_data[train_indices[:args.batchsize]]
-# 			t_batch = train_labels[train_indices[:args.batchsize]]
-
-# 			# GPU
-# 			if xp is cupy:
-# 				x_batch = cuda.to_gpu(x_batch.astype(xp.float32))
-# 				t_batch = cuda.to_gpu(t_batch.astype(xp.int32))
-
-# 			# forward
-# 			y_batch = model(x_batch, split_into_variables=False)
-# 			y_batch = xp.argmax(y_batch.data, axis=2)
-
-# 			average_error = 0
-# 			for input_sequence, argmax_sequence, true_sequence in zip(x_batch, y_batch, t_batch):
-# 				target_sequence = []
-# 				for token in true_sequence:
-# 					if token == 0:
-# 						continue
-# 					target_sequence.append(int(token))
-# 				pred_seqence = []
-# 				for token in argmax_sequence:
-# 					if token == 0:
-# 						continue
-# 					pred_seqence.append(int(token))
-# 				print("true:", target_sequence, "pred:", pred_seqence)
-# 				error = compute_character_error_rate(target_sequence, pred_seqence)
-# 				average_error += error
-# 			print("CER: {} - loss: {} - lr: {:.4e}".format(int(average_error / args.batchsize * 100), sum_loss / total_loop, optimizer.alpha))
-
-
-
 def main():
 	wav_paths = [
-		"/home/stark/sandbox/CSJ/WAV/core/",
+		"/home/aibo/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/stark/sandbox/CSJ_/core/",
+		"/home/aibo/sandbox/CSJ_/core/",
 	]
 
 	sampling_rate = 16000
