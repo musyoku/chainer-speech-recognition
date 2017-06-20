@@ -74,11 +74,11 @@ def decay_learning_rate(opt, factor, final_value):
 
 def main():
 	wav_paths = [
-		"/home/aibo/sandbox/CSJ/WAV/core/",
+		"/home/stark/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/aibo/sandbox/CSJ_/core/",
+		"/home/stark/sandbox/CSJ_/core/",
 	]
 
 	sampling_rate = 16000

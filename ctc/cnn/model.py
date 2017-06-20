@@ -123,27 +123,28 @@ class ZhangModel(Chain):
 		self.using_residual = True if residual else False
 		self.wgain = wgain
 
-		wstd = math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])
-		self.add_link("input_conv", Convolution2D(ndim_audio_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
-		self.add_link("input_conv_norm", LayerNormalization((ndim_h,)))
+		with self.init_scope():
+			wstd = math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])
+			setattr(self, "input_conv", Convolution2D(ndim_audio_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
+			setattr(self, "input_conv_norm", LayerNormalization((ndim_h,)))
 
-		wstd = math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])
-		for i in xrange(num_conv_layers):
-			self.add_link("conv{}".format(i), Convolution2D(ndim_h, ndim_h, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
-			self.add_link("conv_norm{}".format(i), LayerNormalization((ndim_h,)))
+			wstd = math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])
+			for i in xrange(num_conv_layers):
+				setattr(self, "conv{}".format(i), Convolution2D(ndim_h, ndim_h, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
+				setattr(self, "conv_norm{}".format(i), LayerNormalization((ndim_h,)))
 
-		kernel_height = int(math.ceil((num_mel_filters - 2) / 3))
-		if num_fc_layers == 1:
-			self.add_link("fc0", Convolution2D(ndim_h, vocab_size, (kernel_height, 1), stride=1, pad=0))
-			self.add_link("fc_norm0", LayerNormalization((ndim_h,)))
-		else:
-			self.add_link("fc0", Convolution2D(ndim_h, ndim_fc, (kernel_height, 1), stride=1, pad=0))
-			self.add_link("fc_norm0", LayerNormalization((ndim_h,)))
-			for i in xrange(num_fc_layers - 2):
-				self.add_link("fc{}".format(i + 1), Convolution2D(ndim_fc, ndim_fc, ksize=1, stride=1, pad=0))
-				self.add_link("fc_norm{}".format(i + 1), LayerNormalization((ndim_fc,)))
-			self.add_link("fc{}".format(num_fc_layers - 1), Convolution2D(ndim_fc, vocab_size, ksize=1, stride=1, pad=0))
-			self.add_link("fc_norm{}".format(num_fc_layers - 1), LayerNormalization((ndim_fc,)))
+			kernel_height = int(math.ceil((num_mel_filters - 2) / 3))
+			if num_fc_layers == 1:
+				setattr(self, "fc0", Convolution2D(ndim_h, vocab_size, (kernel_height, 1), stride=1, pad=0))
+				setattr(self, "fc_norm0", LayerNormalization((ndim_h,)))
+			else:
+				setattr(self, "fc0", Convolution2D(ndim_h, ndim_fc, (kernel_height, 1), stride=1, pad=0))
+				setattr(self, "fc_norm0", LayerNormalization((ndim_h,)))
+				for i in xrange(num_fc_layers - 2):
+					setattr(self, "fc{}".format(i + 1), Convolution2D(ndim_fc, ndim_fc, ksize=1, stride=1, pad=0))
+					setattr(self, "fc_norm{}".format(i + 1), LayerNormalization((ndim_fc,)))
+				setattr(self, "fc{}".format(num_fc_layers - 1), Convolution2D(ndim_fc, vocab_size, ksize=1, stride=1, pad=0))
+				setattr(self, "fc_norm{}".format(num_fc_layers - 1), LayerNormalization((ndim_fc,)))
 
 	def get_conv_layer(self, index):
 		return getattr(self, "conv{}".format(index))
@@ -254,8 +255,8 @@ class ZhangModel(Chain):
 		out_data = self.normalize_fc_layer(layer_index, out_data, batchsize, seq_length)
 		out_data = self.forward_fc_layer(layer_index, out_data)
 
-		xp = self.xp
-		print(xp.mean(out_data.data), xp.std(out_data.data), xp.amax(out_data.data), xp.amin(out_data.data))
+		# xp = self.xp
+		# print(xp.mean(out_data.data), xp.std(out_data.data), xp.amax(out_data.data), xp.amin(out_data.data))
 
 
 		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある

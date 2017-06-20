@@ -21,15 +21,20 @@ def _softmax(x, xp):
 	return val + 1e-8
 
 def _label_to_path(labels, blank_symbol, xp):
-	path = xp.full((len(labels), labels.shape[1] * 2 + 1),
-				   blank_symbol, dtype=numpy.int32)
+	path = xp.full((len(labels), labels.shape[1] * 2 + 1), blank_symbol, dtype=numpy.int32)
 	path[:, 1::2] = labels
 	return path
 
 
 def _log_dot(prob, rr, xp):
+	# print("_log_dot:")
+	# print(prob)
+	# print(rr)
+	# print(xp.swapaxes(rr, 1, 2))
+	# print(prob + xp.swapaxes(rr, 1, 2))
+	# print(xp.exp(prob + xp.swapaxes(rr, 1, 2)))
+	# print(xp.sum(xp.exp(prob + xp.swapaxes(rr, 1, 2)), axis=2))
 	return _logsumexp(prob + xp.swapaxes(rr, 1, 2), xp, axis=2)
-
 
 def _move_label_to_back(path, path_length, xp):
 	s1 = path.shape[1]
@@ -55,10 +60,10 @@ class ConnectionistTemporalClassification(function.Function):
 	backward values before the activation function is applied.
 	"""
 
-	def __init__(self, blank_symbol, reduce='mean'):
+	def __init__(self, blank_symbol, reduce='mean', softmax_scale=1):
 		self.blank_symbol = blank_symbol
 		self.zero_padding = -10000000000.0
-		# self.zero_padding = -1000.0
+		self.softmax_scale = softmax_scale
 
 		if reduce not in ('mean', 'no'):
 			raise ValueError(
@@ -80,20 +85,15 @@ class ConnectionistTemporalClassification(function.Function):
 				x_type.shape == x_basetype.shape,
 			)
 
-	def log_matrix(self, x, xp, fill=True):
+	def log_matrix(self, x, xp):
 		if xp == numpy:
-			res = numpy.ma.log(x)
-			if fill:
-				res = res.filled(fill_value=self.zero_padding)
+			res = numpy.ma.log(x).filled(fill_value=self.zero_padding)
 		else:
-			if fill:
-				create_recurrence_relation = cuda.cupy.ElementwiseKernel(
-					'T x, T e', 'T y',
-					'y = x == 0 ? e : log(x)',
-					'create_recurrence_relation')
-				res = create_recurrence_relation(x, self.zero_padding)
-			else:
-				res = xp.log(x)
+			create_recurrence_relation = cuda.cupy.ElementwiseKernel(
+				'T x, T e', 'T y',
+				'y = x == 0 ? e : log(x)',
+				'create_recurrence_relation')
+			res = create_recurrence_relation(x, self.zero_padding)
 		return res.astype(numpy.float32)
 
 	def recurrence_relation(self, label, path_length, max_path_length, dtype, xp):
@@ -106,18 +106,23 @@ class ConnectionistTemporalClassification(function.Function):
 		batch_size, lab = label.shape
 		# print("label:")
 		# print(label)
+		# print("xp.roll:")
+		# print(xp.roll(label, 1, axis=1))
+		# print("flag:")
+		# print(label != xp.roll(label, 1, axis=1))
 		repeat_mask = xp.ones((batch_size, lab * 2 + 1))
-		# repeat_mask[:, 1::2] = label != xp.roll(label, 1, axis=1) # valid when s > 1
+		repeat_mask[:, 1::2] = label != xp.roll(label, 1, axis=1) # valid when s > 1
+		# print(repeat_mask)
 		repeat_mask[:, 1::2] = (label !=
 								xp.take(label, xp.arange(-1, lab - 1)
 										% lab + xp.arange(0, batch_size * lab,
 														  lab)[:, None]))
+		# print(repeat_mask)
 		# print("flag:")
 		# print((label !=
 		# 						xp.take(label, xp.arange(-1, lab - 1)
 		# 								% lab + xp.arange(0, batch_size * lab,
 		# 												  lab)[:, None])))
-		# print(repeat_mask)
 		repeat_mask[:, 1] = 1	# correct the result of xp.roll for s = 1
 		# print(repeat_mask)
 		# print("eye:")
@@ -308,11 +313,13 @@ class ConnectionistTemporalClassification(function.Function):
 		self.path_length = 2 * label_length + 1
 
 		yseq_shape = (len(xs),) + xs[0].shape
-		self.yseq = _softmax(xp.vstack(xs).reshape(yseq_shape), xp)
+		# print(xp.vstack(xs))
+		# print(xp.vstack(xs) / self.softmax_scale)
+		self.yseq = _softmax(xp.vstack(xs).reshape(yseq_shape) / self.softmax_scale, xp)
 		# print("yseq softmax:")
 		# print(self.yseq)
 		# print(self.yseq.shape)
-		log_yseq = self.log_matrix(self.yseq, xp, fill=False)
+		log_yseq = self.log_matrix(self.yseq, xp)
 		self.path = _label_to_path(t, self.blank_symbol, xp)
 		# print(self.path)
 		self.prob_trans = self.calc_trans(
@@ -364,6 +371,7 @@ class ConnectionistTemporalClassification(function.Function):
 			# print("__total_probability:")
 			# print(__total_probability.shape)
 			# print(__total_probability)
+			# raise Exception()
 			# print("std:")
 			# print(std)
 
@@ -419,7 +427,7 @@ class ConnectionistTemporalClassification(function.Function):
 
 
 def connectionist_temporal_classification(
-		x, t, blank_symbol, input_length=None, label_length=None,
+		x, t, blank_symbol, input_length=None, label_length=None, softmax_scale=1,
 		reduce='mean'):
 	"""Connectionist Temporal Classification loss function.
 
@@ -498,5 +506,5 @@ def connectionist_temporal_classification(
 		label_length = variable.Variable(
 			xp.full((len(t.data),), len(t.data[0]), dtype=numpy.int32))
 
-	return ConnectionistTemporalClassification(blank_symbol, reduce)(
+	return ConnectionistTemporalClassification(blank_symbol, reduce, softmax_scale)(
 		input_length, label_length, t, *x)

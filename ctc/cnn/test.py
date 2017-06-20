@@ -60,7 +60,8 @@ def generate_data():
 	return x_batch, t_batch[..., :args.true_sequence_length], x_length_batch, t_length_batch
 
 def main():
-	np.random.seed(3)
+	np.random.seed(33)
+	# np.set_printoptions(precision=3, suppress=True)
 
 	model = ZhangModel(args.vocab_size, args.num_conv_layers, args.num_fc_layers, 3, args.ndim_h, dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm)
 	if args.gpu_device >= 0:
@@ -82,7 +83,7 @@ def main():
 	for epoch in xrange(1, args.total_epoch + 1):
 		# train loop
 		sum_loss = 0
-		with chainer.using_config("train", True):
+		with chainer.using_config("debug", True):
 			for itr in xrange(1, total_loop + 1):
 				# sample minibatch
 				np.random.shuffle(train_indices)
@@ -116,7 +117,7 @@ def main():
 				y_batch = model(x_batch)	# list of variables
 
 				# compute loss
-				loss = connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch, reduce="no")
+				loss = connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch, reduce="no", softmax_scale=math.sqrt(1))
 				loss_value = float(xp.sum(loss.data))
 				assert loss_value == loss_value
 				optimizer.update(lossfun=lambda: F.sum(loss))
