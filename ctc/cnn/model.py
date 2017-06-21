@@ -25,15 +25,17 @@ def save_model(dirname, model):
 
 	params = {
 		"vocab_size": model.vocab_size,
-		"ndim_embedding": model.ndim_embedding,
+		"ndim_fc": model.ndim_fc,
 		"ndim_h": model.ndim_h,
-		"num_layers_per_block": model.num_layers_per_block,
-		"num_blocks": model.num_blocks,
+		"ndim_audio_features": model.ndim_audio_features,
+		"num_conv_layers": model.num_conv_layers,
+		"num_fc_layers": model.num_fc_layers,
 		"kernel_size": model.kernel_size,
 		"dropout": model.dropout,
 		"weightnorm": model.weightnorm,
+		"layernorm": model.using_layernorm,
+		"residual": model.using_residual,
 		"wgain": model.wgain,
-		"ignore_label": model.ignore_label,
 	}
 	with open(param_filename, "w") as f:
 		json.dump(params, f, indent=4, sort_keys=True, separators=(',', ': '))
