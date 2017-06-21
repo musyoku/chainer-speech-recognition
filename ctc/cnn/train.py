@@ -6,7 +6,7 @@ import sys, argparse, time, cupy, math
 import chainer
 import numpy as np
 import chainer.functions as F
-from chainer import optimizers, cuda
+from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
 from dataset import load_audio_and_transcription, get_minibatch, get_vocab
 from model import ZhangModel, load_model, save_model
@@ -74,11 +74,11 @@ def decay_learning_rate(opt, factor, final_value):
 
 def main():
 	wav_paths = [
-		"/home/stark/sandbox/CSJ/WAV/core/",
+		"/home/aibo/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/stark/sandbox/CSJ_/core/",
+		"/home/aibo/sandbox/CSJ_/core/",
 	]
 
 	sampling_rate = 16000
@@ -223,7 +223,12 @@ def main():
 				loss = connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
 
 				# 更新
-				optimizer.update(lossfun=lambda: loss)
+				try:
+					optimizer.update(lossfun=lambda: loss)
+				except:
+					save_model(model)
+					import traceback
+					traceback.print_exc()
 
 				loss = float(loss.data)
 				if loss != loss:
@@ -236,6 +241,7 @@ def main():
 
 		sys.stdout.write("\r" + stdout.CLEAR)
 		sys.stdout.flush()
+		save_model(model)
 
 		# バリデーション
 		with chainer.using_config("train", False):
