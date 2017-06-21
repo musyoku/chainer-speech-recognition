@@ -1,9 +1,9 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import chainer, argparse, math, cupy, sys
+import chainer, argparse, math, cupy, sys, os
 import numpy as np
-from chainer import optimizers, cuda
+from chainer import optimizers, cuda, serializers
 from chainer import functions as F
 from model import ZhangModel
 sys.path.append("../../")
@@ -37,25 +37,35 @@ def generate_data():
 
 	for data_idx in xrange(len(x_batch)):
 		num_tokens = np.random.randint(1, high=args.true_sequence_length + 1, size=1)
-		x_length = np.random.randint(num_tokens, high=args.sequence_length + 1, size=1)
+		x_length = np.random.randint(num_tokens * 2 + 1, high=args.sequence_length + 1, size=1)
 		tokens = np.random.choice(np.arange(1, args.vocab_size), size=num_tokens)
-
-		num_trans_same_label = np.count_nonzero(tokens == np.roll(tokens, 1))
-		x_length += max(0, num_tokens + num_trans_same_label - x_length)
-		assert x_length <= args.sequence_length
 
 		indices = np.random.choice(np.arange(x_length), size=num_tokens, replace=False)
 		for token_idx, token in zip(indices, tokens): 
 			x_batch[data_idx, ..., token_idx] = true_data[token]
 			t_batch[data_idx, token_idx] = token
-		t_length_batch[data_idx] = num_tokens
-		x_length_batch[data_idx] = x_length
 
-	for data_idx in xrange(len(x_batch)):
 		t = t_batch[data_idx]
 		t = t[t > 0]
 		t_batch[data_idx] = BLANK
 		t_batch[data_idx, :len(t)] = t
+		
+		valid_tokens = t_batch[data_idx]
+		valid_tokens = valid_tokens[valid_tokens != BLANK]
+		num_trans_same_label = np.count_nonzero(valid_tokens == np.roll(valid_tokens, 1))
+		x_length += max(0, num_tokens + num_trans_same_label - x_length)
+		if x_length > args.sequence_length:
+			print(num_tokens)
+			print(num_trans_same_label)
+			print(t_batch[data_idx])
+			print(x_length)
+			print(args.sequence_length)
+			t_batch[data_idx, -(x_length - args.sequence_length):] = BLANK
+			print(t_batch[data_idx])
+			raise Exception()
+
+		t_length_batch[data_idx] = num_tokens
+		x_length_batch[data_idx] = x_length
 
 	return x_batch, t_batch[..., :args.true_sequence_length], x_length_batch, t_length_batch
 
@@ -63,7 +73,11 @@ def main():
 	np.random.seed(33)
 	# np.set_printoptions(precision=3, suppress=True)
 
+	model_filename = "model.hdf5"
 	model = ZhangModel(args.vocab_size, args.num_conv_layers, args.num_fc_layers, 3, args.ndim_h, dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm)
+	if os.path.isfile(model_filename):
+		print("loading {} ...".format(model_filename))
+		serializers.load_hdf5(model_filename, model)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu()
@@ -119,10 +133,18 @@ def main():
 				# compute loss
 				loss = connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch, reduce="no", softmax_scale=math.sqrt(1))
 				loss_value = float(xp.sum(loss.data))
+				if loss_value != loss_value:
+					if os.path.isfile(model_filename):
+						os.remove(model_filename)
+					serializers.save_hdf5(model_filename, model)
+
 				assert loss_value == loss_value
 				optimizer.update(lossfun=lambda: F.sum(loss))
 
 				sum_loss += loss_value
+
+				sys.stdout.write("\riteration {}/{}".format(itr, total_loop))
+				sys.stdout.flush()
 
 		# evaluate
 		with chainer.using_config("train", False):
