@@ -226,7 +226,7 @@ def main():
 				try:
 					optimizer.update(lossfun=lambda: loss)
 				except:
-					save_model(model)
+					save_model(args.model_dir, model)
 					import traceback
 					traceback.print_exc()
 
@@ -241,7 +241,7 @@ def main():
 
 		sys.stdout.write("\r" + stdout.CLEAR)
 		sys.stdout.flush()
-		save_model(model)
+		save_model(args.model_dir, model)
 
 		# バリデーション
 		with chainer.using_config("train", False):
