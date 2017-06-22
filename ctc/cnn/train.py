@@ -266,7 +266,9 @@ def main():
 				sum_error = 0
 
 				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, BLANK)
-				x_batch = (x_batch - running_mean) / running_std
+				mean_x_batch = np.mean(x_batch, axis=(0, 3), keepdims=True)
+				stddev_x_batch = np.std(x_batch, axis=(0, 3), keepdims=True)
+				x_batch = (x_batch - mean_x_batch) / stddev_x_batch
 
 				if model.xp is cuda.cupy:
 					x_batch = cuda.to_gpu(x_batch.astype(np.float32))
@@ -311,7 +313,9 @@ def main():
 
 				for itr in xrange(total_iterations_dev):
 					x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, BLANK)
-					x_batch = (x_batch - running_mean) / running_std
+					mean_x_batch = np.mean(x_batch, axis=(0, 3), keepdims=True)
+					stddev_x_batch = np.std(x_batch, axis=(0, 3), keepdims=True)
+					x_batch = (x_batch - mean_x_batch) / stddev_x_batch
 
 					if model.xp is cuda.cupy:
 						x_batch = cuda.to_gpu(x_batch.astype(np.float32))
