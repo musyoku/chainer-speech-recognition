@@ -406,17 +406,17 @@ class ConnectionistTemporalClassification(function.Function):
 				print("std:")
 				print(std)
 
-			print(inputs[0])
-			print(inputs[1])
-			print(inputs[2])
-			print("_total_probability:")
-			print(_total_probability.shape)
-			print(_total_probability)
-			print("__total_probability:")
-			print(__total_probability.shape)
-			print(__total_probability)
-			print("std:")
-			print(std)
+			# print(inputs[0])
+			# print(inputs[1])
+			# print(inputs[2])
+			# print("_total_probability:")
+			# print(_total_probability.shape)
+			# print(_total_probability)
+			# print("__total_probability:")
+			# print(__total_probability.shape)
+			# print(__total_probability)
+			# print("std:")
+			# print(std)
 			assert len(__total_probability[__total_probability < minimum_log_prob]) == 0
 
 		label_prob = self.label_probability(

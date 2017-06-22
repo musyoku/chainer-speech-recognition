@@ -74,11 +74,11 @@ def decay_learning_rate(opt, factor, final_value):
 
 def main():
 	wav_paths = [
-		"/home/aibo/sandbox/CSJ/WAV/core/",
+		"/home/stark/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/aibo/sandbox/CSJ_/core/",
+		"/home/stark/sandbox/CSJ_/core/",
 	]
 
 	sampling_rate = 16000
@@ -178,9 +178,21 @@ def main():
 	final_learning_rate = 1e-4
 	total_time = 0
 
-	running_mean = 0
-	running_std = 0
-	running_z = 0
+	# statistics
+	# mean_filename = "mean.npy"	
+	# std_filename = "std.npy"	
+	# if os.path.isfile(param_filename):
+	# 	print("loading {} ...".format(param_filename))
+	# 	with open(param_filename, "r") as f:
+	# 		try:
+	# 			params = json.load(f)
+	# 		except Exception as e:
+	# 			raise Exception("could not load {}".format(param_filename))
+
+
+	# running_mean = 0
+	# running_std = 0
+	# running_z = 0
 
 	np.random.seed(0)
 	xp.random.seed(0)
@@ -190,7 +202,7 @@ def main():
 		start_time = time.time()
 		sum_loss = 0
 		
-		with chainer.using_config("debug", True):
+		with chainer.using_config("train", True):
 
 			for itr in xrange(1, total_iterations_train + 1):
 				bucket_idx = int(np.random.choice(np.arange(len(buckets_train)), size=1, p=buckets_distribution))
@@ -204,12 +216,12 @@ def main():
 				# 本来は学習前にデータ全体の平均・分散を計算すべきだが、データ拡大を用いるため、逐一更新していくことにする
 				mean_x_batch = np.mean(x_batch, axis=(0, 3), keepdims=True)
 				stddev_x_batch = np.std(x_batch, axis=(0, 3), keepdims=True)
-				running_mean = running_mean * (running_z / (running_z + 1)) + mean_x_batch / (running_z + 1)	# 正規化定数が+1されることに注意
-				running_std = running_std * (running_z / (running_z + 1)) + stddev_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
-				running_z += 1
+				# running_mean = running_mean * (running_z / (running_z + 1)) + mean_x_batch / (running_z + 1)	# 正規化定数が+1されることに注意
+				# running_std = running_std * (running_z / (running_z + 1)) + stddev_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
+				# running_z += 1
 
 				# 正規化
-				x_batch = (x_batch - running_mean) / running_std
+				x_batch = (x_batch - mean_x_batch) / stddev_x_batch
 
 				# GPU
 				if xp is cupy:
