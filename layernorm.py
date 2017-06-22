@@ -42,7 +42,8 @@ class NormalizeLayer(function.Function):
 		mean = xp.mean(x, axis=(1, 2), keepdims=True)
 		self.broadcast_shape = mean.shape
 		self.diff = x - mean
-		std = xp.std(x, axis=(1, 2), keepdims=True)
+		std = xp.sqrt(xp.sum(self.diff ** 2, axis=(1, 2), keepdims=True) / size)
+		# std = xp.std(x, axis=(1, 2), keepdims=True)
 		self.std = std
 		return self.diff / std,
 

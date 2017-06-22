@@ -1,7 +1,7 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import chainer, argparse, math, cupy, sys, os
+import chainer, argparse, math, cupy, sys, os, time
 import numpy as np
 from chainer import optimizers, cuda, serializers
 from chainer import functions as F
@@ -97,6 +97,7 @@ def main():
 	for epoch in xrange(1, args.total_epoch + 1):
 		# train loop
 		sum_loss = 0
+		start_time = time.time()
 		with chainer.using_config("debug", True):
 			for itr in xrange(1, total_loop + 1):
 				# sample minibatch
@@ -179,6 +180,7 @@ def main():
 				average_error += error
 			print("CER: {} - loss: {} - lr: {:.4e}".format(int(average_error / args.batchsize * 100), sum_loss / total_loop, optimizer.alpha))
 
+		print("elapsed:", time.time() - start_time)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
