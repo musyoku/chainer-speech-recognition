@@ -9,6 +9,7 @@ from six.moves import xrange
 from chainer import Chain, serializers, initializers, variable, functions
 sys.path.append("../../")
 from convolution_2d import Convolution2D as WeightnormConvolution2D
+from layernorm import normalize_layer
 
 def save_model(dirname, model):
 	model_filename = dirname + "/model.hdf5"
@@ -99,7 +100,8 @@ class LayerNormalization(chainer.link.Link):
 		if self.gamma.data is None:
 			self._initialize_params(x.size // x.shape[0])
 
-		normalized = self._normalize(x)
+		# normalized = self._normalize(x)
+		normalized = normalize_layer(x)
 		return functions.math.bias.bias(functions.math.scale.scale(normalized, self.gamma), self.beta)
 		
 # Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks

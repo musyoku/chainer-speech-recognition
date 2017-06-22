@@ -23,14 +23,14 @@ def _normalize_layer(x, eps):
 	mean = functions.math.sum.sum(x, axis=(1, 2), keepdims=True) / size
 	mean = functions.array.broadcast.broadcast_to(mean, x.shape)
 	std = functions.math.sum.sum(functions.math.square.square(x - mean), axis=(1, 2), keepdims=True) / size
-	# std = functions.math.sqrt.sqrt(std) + eps
-	# std = functions.array.broadcast.broadcast_to(std, x.shape)
-	return x - mean
+	std = functions.math.sqrt.sqrt(std) + eps
+	std = functions.array.broadcast.broadcast_to(std, x.shape)
 	return (x - mean) / std
 
 @testing.parameterize(*(testing.product({
 	'x_shape': [(3, 40, 10)],
 	'y_shape': [(3, 40, 10)],
+	# 'y_shape': [(1, 1, 10)],
 	'dtype': [numpy.float16, numpy.float32, numpy.float64],
 })))
 class TestLayerNormalization(unittest.TestCase):
@@ -42,7 +42,7 @@ class TestLayerNormalization(unittest.TestCase):
 		self.x = numpy.random.uniform(-10, 10, x_shape).astype(self.dtype)
 		self.gy = numpy.random.uniform(-1, 1, y_shape).astype(self.dtype)
 		self.train = True
-		self.check_forward_options = {'atol': 1e-4, 'rtol': 1e-3}
+		self.check_forward_options = {'atol': 1e-3, 'rtol': 1e-3}
 		self.check_backward_options = {'dtype': numpy.float64}
 		if self.dtype == numpy.float16:
 			self.check_forward_options = {'atol': 1e-2, 'rtol': 1e-2}

@@ -34,35 +34,30 @@ class NormalizeLayer(function.Function):
 		self.retain_inputs(())
 		self.eps = eps
 		x = xs[0]
-		self.x = x
 		self.x_shape = x.shape
 		self.x_dtype = x.dtype
 		xp = cuda.get_array_module(x)
 		size = x.shape[1] * x.shape[2]
 		self.x_size = size
 		mean = xp.mean(x, axis=(1, 2), keepdims=True)
-		mean = xp.broadcast_to(mean, x.shape)
+		self.broadcast_shape = mean.shape
 		self.diff = x - mean
-		return self.diff,
-		var = xp.var(x, axis=(1, 2), keepdims=True)
-		self.var = var
-		return var,
 		std = xp.std(x, axis=(1, 2), keepdims=True)
 		self.std = std
-		# std = xp.broadcast_to(std, x.shape)
-		# self.std_shape = std.shape
-		# self.std_dtype = std.dtype
-		return std,
-		# return (x - mean) / std,
+		return self.diff / std,
 
 	def backward(self, xs, grads):
-		x = self.x
 		xp = cuda.get_array_module(grads[0])
-		grad_broad = _backward_one(xp, self.x_shape, self.x_dtype, -grads[0])
-		mean_grad = _backward_sum(grad_broad / self.x_size, self.x_shape)
-		return grads[0] + mean_grad,
-		var_grad = mean_grad
-		return mean_grad,
+
+		std_grad = _backward_one(xp, self.broadcast_shape, self.x_dtype, -grads[0] / (self.std ** 2) * self.diff)
+		var_grad = _backward_sum(std_grad * 0.5 / self.std, self.x_shape) / self.x_size
+		var_grad = var_grad * 2 * self.diff
+		var_grad += grads[0] / self.std
+
+		grad_broad = _backward_one(xp, self.broadcast_shape, self.x_dtype, -var_grad)
+		mean_grad = _backward_sum(grad_broad, self.x_shape) / self.x_size
+
+		return var_grad + mean_grad,
 
 def normalize_layer(x, eps=1e-6):
 	return NormalizeLayer(eps)(x)
