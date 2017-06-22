@@ -2,7 +2,7 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import sys, argparse, time, cupy, math
+import sys, argparse, time, cupy, math, os
 import chainer
 import numpy as np
 import chainer.functions as F
@@ -179,16 +179,28 @@ def main():
 	total_time = 0
 
 	# statistics
-	# mean_filename = "mean.npy"	
-	# std_filename = "std.npy"	
-	# if os.path.isfile(param_filename):
-	# 	print("loading {} ...".format(param_filename))
-	# 	with open(param_filename, "r") as f:
-	# 		try:
-	# 			params = json.load(f)
-	# 		except Exception as e:
-	# 			raise Exception("could not load {}".format(param_filename))
+	mean_filename = "mean.npy"	
+	std_filename = "std.npy"	
+	mean_x_batch = None
+	stddev_x_batch = None
 
+	if os.path.isfile(mean_filename):
+		print("loading {} ...".format(mean_filename))
+		mean_x_batch = np.load(mean_filename)
+	if os.path.isfile(std_filename):
+		print("loading {} ...".format(std_filename))
+		stddev_x_batch = np.load(std_filename)
+
+	if mean_x_batch is None:
+		mean_x_batch = 0
+		stddev_x_batch = 0
+		for bucket_idx in xrange(len(buckets_train)):
+			bucket = buckets_train[bucket_idx]
+			x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, len(bucket), BLANK)
+			mean_x_batch += np.mean(x_batch, axis=(0, 3), keepdims=True)
+			stddev_x_batch += np.std(x_batch, axis=(0, 3), keepdims=True)
+		np.save(mean_filename, mean_x_batch / len(buckets_train))
+		np.save(std_filename, stddev_x_batch / len(buckets_train))
 
 	# running_mean = 0
 	# running_std = 0
@@ -214,8 +226,8 @@ def main():
 
 				# 平均と分散を計算
 				# 本来は学習前にデータ全体の平均・分散を計算すべきだが、データ拡大を用いるため、逐一更新していくことにする
-				mean_x_batch = np.mean(x_batch, axis=(0, 3), keepdims=True)
-				stddev_x_batch = np.std(x_batch, axis=(0, 3), keepdims=True)
+				# mean_x_batch = np.mean(x_batch, axis=(0, 3), keepdims=True)
+				# stddev_x_batch = np.std(x_batch, axis=(0, 3), keepdims=True)
 				# running_mean = running_mean * (running_z / (running_z + 1)) + mean_x_batch / (running_z + 1)	# 正規化定数が+1されることに注意
 				# running_std = running_std * (running_z / (running_z + 1)) + stddev_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
 				# running_z += 1
