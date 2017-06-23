@@ -72,6 +72,58 @@ def decay_learning_rate(opt, factor, final_value):
 		return
 	raise NotImplementationError()
 
+def compute_error(buckets, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=True):
+	errors = []
+	xp = model.xp
+	batchsize = args.batchsize_dev
+	for bucket_idx, bucket in enumerate(buckets):
+		total_iterations = 1 if approximate else int(len(bucket) // batchsize)
+		sum_error = 0
+		for itr in xrange(total_iterations):
+
+			x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, batchsize, BLANK)
+			x_batch = (x_batch - mean_x_batch) / stddev_x_batch
+
+			if model.xp is cuda.cupy:
+				x_batch = cuda.to_gpu(x_batch.astype(np.float32))
+				t_batch = cuda.to_gpu(np.asarray(t_batch).astype(np.int32))
+				x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
+				t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
+
+			y_batch = model(x_batch, split_into_variables=False)
+			y_batch = xp.argmax(y_batch.data, axis=2)
+
+			for argmax_sequence, true_sequence in zip(y_batch, t_batch):
+				target_sequence = []
+				for token in true_sequence:
+					if token == BLANK:
+						continue
+					target_sequence.append(int(token))
+				pred_seqence = []
+				prev_token = BLANK
+				for token in argmax_sequence:
+					if token == BLANK:
+						prev_token = BLANK
+						continue
+					if token == prev_token:
+						continue
+					pred_seqence.append(int(token))
+					prev_token = token
+				if approximate == True:
+					print("true:", target_sequence, "pred:", pred_seqence)
+				error = compute_character_error_rate(target_sequence, pred_seqence)
+				sum_error += error
+
+
+			sys.stdout.write("\r" + stdout.CLEAR)
+			sys.stdout.write("\rComputing error - bucket {}/{} - iteration {}/{}".format(bucket_idx + 1, len(buckets), itr, total_iterations))
+			sys.stdout.flush()
+			bucket = np.roll(bucket, batchsize)
+
+		errors.append(sum_error * 100.0 / batchsize / total_iterations)
+
+	return errors
+
 def main():
 	wav_paths = [
 		"/home/stark/sandbox/CSJ/WAV/core/",
@@ -269,130 +321,8 @@ def main():
 
 		# バリデーション
 		with chainer.using_config("train", False):
-			train_error = []
-			dev_error = []
-
-			# train
-			for bucket_idx in xrange(len(buckets_train)):
-				bucket = buckets_train[bucket_idx]
-				sum_error = 0
-
-				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, BLANK)
-				x_batch = (x_batch - mean_x_batch) / stddev_x_batch
-
-				if model.xp is cuda.cupy:
-					x_batch = cuda.to_gpu(x_batch.astype(np.float32))
-					t_batch = cuda.to_gpu(np.asarray(t_batch).astype(np.int32))
-					x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
-					t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
-
-				y_batch = model(x_batch, split_into_variables=False)
-				y_batch = xp.argmax(y_batch.data, axis=2)
-
-				sum_error = 0
-				for argmax_sequence, true_sequence in zip(y_batch, t_batch):
-					target_sequence = []
-					for token in true_sequence:
-						if token == BLANK:
-							continue
-						target_sequence.append(int(token))
-					pred_seqence = []
-					prev_token = BLANK
-					for token in argmax_sequence:
-						if token == BLANK:
-							prev_token = BLANK
-							continue
-						if token == prev_token:
-							continue
-						pred_seqence.append(int(token))
-						prev_token = token
-					print("true:", target_sequence, "pred:", pred_seqence)
-					error = compute_character_error_rate(target_sequence, pred_seqence)
-					sum_error += error
-
-				# T = y_batch.shape[1]
-				# xp = model.xp
-
-				# for batch_idx in xrange(len(y_batch)):
-				# 	y_sequence = y_batch[batch_idx]
-				# 	t_sequence = t_batch[batch_idx]
-
-				# 	print(y_sequence.shape)
-
-				# 	pred_ids = []
-				# 	for t in xrange(T):
-				# 		prob = y_sequence[t]
-				# 		assert prob.size == vocab_size
-				# 		char_id = int(xp.argmax(prob))
-				# 		if char_id == BLANK:
-				# 			continue
-				# 		pred_ids.append(char_id)
-
-				# 	target_ids = []
-				# 	for t in xrange(t_sequence.size):
-				# 		char_id = int(t_sequence[t])
-				# 		if char_id == BLANK:
-				# 			continue
-				# 		target_ids.append(char_id)
-
-				# 	error = compute_character_error_rate(target_ids, pred_ids)
-				# 	sum_error += error
-
-				train_error.append(sum_error * 100.0 / args.batchsize)
-
-			# dev
-			for bucket_idx in xrange(len(buckets_dev)):
-				bucket = buckets_dev[bucket_idx]
-				total_iterations_dev = int(len(bucket) // args.batchsize_dev)
-				sum_error = 0
-
-				for itr in xrange(total_iterations_dev):
-					x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, BLANK)
-					x_batch = (x_batch - mean_x_batch) / stddev_x_batch
-
-					if model.xp is cuda.cupy:
-						x_batch = cuda.to_gpu(x_batch.astype(np.float32))
-						t_batch = cuda.to_gpu(np.asarray(t_batch).astype(np.int32))
-						x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
-						t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
-
-					y_batch = model(x_batch, split_into_variables=False).data
-					T = y_batch.shape[1]
-					xp = model.xp
-
-					for batch_idx in xrange(len(y_batch)):
-						y_sequence = y_batch[batch_idx]
-						t_sequence = t_batch[batch_idx]
-
-						pred_ids = []
-						for t in xrange(T):
-							prob = y_sequence[t]
-							assert prob.size == vocab_size
-							char_id = int(xp.argmax(prob))
-							if char_id == BLANK:
-								continue
-							pred_ids.append(char_id)
-
-						target_ids = []
-						for t in xrange(t_sequence.size):
-							char_id = int(t_sequence[t])
-							if char_id == BLANK:
-								continue
-							target_ids.append(char_id)
-
-						error = compute_character_error_rate(target_ids, pred_ids)
-						sum_error += error
-
-					sys.stdout.write("\r" + stdout.CLEAR)
-					sys.stdout.write("\rComputing validation error - bucket {}/{} - iteration {}/{}".format(bucket_idx + 1, len(buckets_dev), itr, total_iterations_dev))
-					sys.stdout.flush()
-
-					buckets_dev[bucket_idx] = np.roll(bucket, args.batchsize_dev)
-
-				dev_error.append(sum_error * 100.0 / args.batchsize / total_iterations_dev)
-
-			for bucket in buckets_dev:
-				np.random.shuffle(bucket)
+			train_error = compute_error(buckets_train, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=True)
+			dev_error = compute_error(buckets_dev, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=False)
 
 		sys.stdout.write(stdout.MOVE)
 		sys.stdout.write(stdout.LEFT)
