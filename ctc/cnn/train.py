@@ -297,10 +297,15 @@ def main():
 							continue
 						target_sequence.append(int(token))
 					pred_seqence = []
+					prev_token = BLANK
 					for token in argmax_sequence:
 						if token == BLANK:
+							prev_token = BLANK
+							continue
+						if token == prev_token:
 							continue
 						pred_seqence.append(int(token))
+						prev_token = token
 					print("true:", target_sequence, "pred:", pred_seqence)
 					error = compute_character_error_rate(target_sequence, pred_seqence)
 					sum_error += error
