@@ -74,9 +74,9 @@ def get_minibatch(bucket, dataset, batchsize, id_blank):
 		t_length = len(sentence)
 
 		# x
-		x_batch[batch_idx, 0, :, -logmel.shape[1]:] = logmel
-		x_batch[batch_idx, 1, :, -delta.shape[1]:] = delta
-		x_batch[batch_idx, 2, :, -delta_delta.shape[1]:] = delta_delta
+		x_batch[batch_idx, 0, :, :logmel.shape[1]] = logmel
+		x_batch[batch_idx, 1, :, :delta.shape[1]] = delta
+		x_batch[batch_idx, 2, :, :delta_delta.shape[1]] = delta_delta
 		x_valid_length.append(x_length)
 
 		# CTCが適用可能かチェック
