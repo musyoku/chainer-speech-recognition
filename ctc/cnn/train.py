@@ -278,8 +278,6 @@ def main():
 				sum_error = 0
 
 				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, BLANK)
-				mean_x_batch = np.mean(x_batch, axis=(0, 3), keepdims=True)
-				stddev_x_batch = np.std(x_batch, axis=(0, 3), keepdims=True)
 				x_batch = (x_batch - mean_x_batch) / stddev_x_batch
 
 				if model.xp is cuda.cupy:
@@ -288,32 +286,52 @@ def main():
 					x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
 					t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
-				y_batch = model(x_batch, split_into_variables=False).data
-				T = y_batch.shape[1]
-				xp = model.xp
+				y_batch = model(x_batch, split_into_variables=False)
+				y_batch = xp.argmax(y_batch.data, axis=2)
 
-				for batch_idx in xrange(len(y_batch)):
-					y_sequence = y_batch[batch_idx]
-					t_sequence = t_batch[batch_idx]
-
-					pred_ids = []
-					for t in xrange(T):
-						prob = y_sequence[t]
-						assert prob.size == vocab_size
-						char_id = int(xp.argmax(prob))
-						if char_id == BLANK:
+				sum_error = 0
+				for argmax_sequence, true_sequence in zip(y_batch, t_batch):
+					target_sequence = []
+					for token in true_sequence:
+						if token == BLANK:
 							continue
-						pred_ids.append(char_id)
-
-					target_ids = []
-					for t in xrange(t_sequence.size):
-						char_id = int(t_sequence[t])
-						if char_id == BLANK:
+						target_sequence.append(int(token))
+					pred_seqence = []
+					for token in argmax_sequence:
+						if token == BLANK:
 							continue
-						target_ids.append(char_id)
-
-					error = compute_character_error_rate(target_ids, pred_ids)
+						pred_seqence.append(int(token))
+					print("true:", target_sequence, "pred:", pred_seqence)
+					error = compute_character_error_rate(target_sequence, pred_seqence)
 					sum_error += error
+
+				# T = y_batch.shape[1]
+				# xp = model.xp
+
+				# for batch_idx in xrange(len(y_batch)):
+				# 	y_sequence = y_batch[batch_idx]
+				# 	t_sequence = t_batch[batch_idx]
+
+				# 	print(y_sequence.shape)
+
+				# 	pred_ids = []
+				# 	for t in xrange(T):
+				# 		prob = y_sequence[t]
+				# 		assert prob.size == vocab_size
+				# 		char_id = int(xp.argmax(prob))
+				# 		if char_id == BLANK:
+				# 			continue
+				# 		pred_ids.append(char_id)
+
+				# 	target_ids = []
+				# 	for t in xrange(t_sequence.size):
+				# 		char_id = int(t_sequence[t])
+				# 		if char_id == BLANK:
+				# 			continue
+				# 		target_ids.append(char_id)
+
+				# 	error = compute_character_error_rate(target_ids, pred_ids)
+				# 	sum_error += error
 
 				train_error.append(sum_error * 100.0 / args.batchsize)
 
@@ -325,8 +343,6 @@ def main():
 
 				for itr in xrange(total_iterations_dev):
 					x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize_dev, BLANK)
-					mean_x_batch = np.mean(x_batch, axis=(0, 3), keepdims=True)
-					stddev_x_batch = np.std(x_batch, axis=(0, 3), keepdims=True)
 					x_batch = (x_batch - mean_x_batch) / stddev_x_batch
 
 					if model.xp is cuda.cupy:
