@@ -53,13 +53,13 @@ def load_model(dirname):
 			except Exception as e:
 				raise Exception("could not load {}".format(param_filename))
 
-		qrnn = ZhangModel(**params)
+		model = ZhangModel(**params)
 
 		if os.path.isfile(model_filename):
 			print("loading {} ...".format(model_filename))
-			serializers.load_hdf5(model_filename, qrnn)
+			serializers.load_hdf5(model_filename, model)
 
-		return qrnn
+		return model
 	else:
 		return None
 

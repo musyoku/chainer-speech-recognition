@@ -72,12 +72,11 @@ def decay_learning_rate(opt, factor, final_value):
 		return
 	raise NotImplementationError()
 
-def compute_error(buckets, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=True):
+def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=True):
 	errors = []
 	xp = model.xp
-	batchsize = args.batchsize_dev
-	for bucket_idx, bucket in enumerate(buckets):
-		total_iterations = 1 if approximate else int(len(bucket) // batchsize)
+	for bucket_idx, (bucket, batchsize) in enumerate(zip(buckets, batchsizes)):
+		total_iterations = 1 if approximate else int(math.ceil(len(bucket) / batchsize))
 		sum_error = 0
 		for itr in xrange(total_iterations):
 
@@ -156,31 +155,35 @@ def main():
 	print("wav	{}".format(len(pair)))
 	print("vocab	{}".format(len(vocab)))
 
+	# ミニバッチサイズ
+	batchsizes = [64, 32, 32, 24, 24, 16, 16, 8, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+
 	dataset = []
 	max_bucket_index = 0	# バケットの最大個数
 	for signal, sentence in pair:
 		# 転記、対数メルフィルタバンク出力、Δ、ΔΔの順で並べる
 		# データが多いことが想定されるので遅延読み込み
 		dataset.append((signal, sentence, None, None, None))
-		bucket_index = get_bucket_index(signal)
-		if bucket_index > max_bucket_index:
-			max_bucket_index = bucket_index
+		bucket_idx = get_bucket_index(signal)
+		if bucket_idx > max_bucket_index:
+			max_bucket_index = bucket_idx
 
 	tmp_buckets = [None] * (max_bucket_index + 1)
 	for idx, data in enumerate(dataset):
 		signal = data[0]
-		bucket_index = get_bucket_index(signal)
-		if tmp_buckets[bucket_index] is None:
-			tmp_buckets[bucket_index] = []
-		tmp_buckets[bucket_index].append(idx)
+		bucket_idx = get_bucket_index(signal)
+		if tmp_buckets[bucket_idx] is None:
+			tmp_buckets[bucket_idx] = []
+		tmp_buckets[bucket_idx].append(idx)
 
+	batchsizes = batchsizes[:len(tmp_buckets)]
 	buckets_train = []
 	buckets_dev = []
 	print_bold("bucket	#train	#dev	sec")
-	for idx, bucket in enumerate(tmp_buckets):
+	for idx, (bucket, batchsize) in enumerate(zip(tmp_buckets, batchsizes)):
 		if bucket is None:
 			continue
-		if len(bucket) < args.batchsize:	# ミニバッチサイズより少ない場合はスキップ
+		if len(bucket) < batchsize:	# ミニバッチサイズより少ない場合はスキップ
 			continue
 		if args.buckets_slice is not None and idx > args.buckets_slice:
 			continue
@@ -200,9 +203,10 @@ def main():
 
 	# バケットごとのデータ量の差を学習回数によって補正する
 	# データが多いバケットほど多くの学習（ミニバッチのサンプリング）を行う
+	batchsizes = batchsizes[:len(buckets_train)]
 	required_interations = []
-	for data in buckets_train:
-		itr = len(data) // args.batchsize + 1
+	for bucket, batchsize in zip(buckets_train, batchsizes):
+		itr = int(math.ceil(len(bucket) / batchsize))
 		required_interations.append(itr)
 	total_iterations_train = sum(required_interations)
 	buckets_distribution = np.asarray(required_interations, dtype=float) / total_iterations_train
@@ -271,9 +275,10 @@ def main():
 			for itr in xrange(1, total_iterations_train + 1):
 				bucket_idx = int(np.random.choice(np.arange(len(buckets_train)), size=1, p=buckets_distribution))
 				bucket = buckets_train[bucket_idx]
+				batchsize = batchsizes[bucket_idx]
 				np.random.shuffle(bucket)
 
-				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, args.batchsize, BLANK)
+				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, batchsize, BLANK)
 				feature_dim = x_batch.shape[1]
 
 				# 平均と分散を計算
@@ -321,8 +326,8 @@ def main():
 
 		# バリデーション
 		with chainer.using_config("train", False):
-			train_error = compute_error(buckets_train, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=True)
-			dev_error = compute_error(buckets_dev, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=False)
+			train_error = compute_error(buckets_train, batchsizes, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=True)
+			dev_error = compute_error(buckets_dev, batchsizes, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=False)
 
 		sys.stdout.write(stdout.MOVE)
 		sys.stdout.write(stdout.LEFT)
@@ -338,8 +343,6 @@ def main():
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--batchsize", "-b", type=int, default=8)
-	parser.add_argument("--batchsize-dev", "-bd", type=int, default=64)
 	parser.add_argument("--total-epoch", "-e", type=int, default=1000)
 	parser.add_argument("--grad-clip", "-gc", type=float, default=1) 
 	parser.add_argument("--weight-decay", "-wd", type=float, default=1e-5) 
