@@ -125,11 +125,11 @@ def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stdd
 
 def main():
 	wav_paths = [
-		"/home/stark/sandbox/CSJ/WAV/core/",
+		"/home/aibo/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/stark/sandbox/CSJ_/core/",
+		"/home/aibo/sandbox/CSJ_/core/",
 	]
 
 	sampling_rate = 16000
@@ -220,7 +220,7 @@ def main():
 	# モデル
 	model = load_model(args.model_dir)
 	if model is None:
-		model = ZhangModel(vocab_size, args.num_conv_layers, args.num_fc_layers, args.ndim_audio_features, args.ndim_h, dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm, residual=args.residual, wgain=args.wgain, num_mel_filters=num_mel_filters)
+		model = ZhangModel(vocab_size, args.num_conv_layers, args.num_fc_layers, args.ndim_audio_features, args.ndim_h, ndim_fc=args.ndim_fc, dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm, residual=args.residual, wgain=args.wgain, num_mel_filters=num_mel_filters)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu(args.gpu_device)
@@ -353,6 +353,7 @@ if __name__ == "__main__":
 	
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
 	parser.add_argument("--ndim-h", "-nh", type=int, default=320)
+	parser.add_argument("--ndim-fc", "-nfc", type=int, default=1024)
 	parser.add_argument("--num-conv-layers", "-conv", type=int, default=2)
 	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
 	parser.add_argument("--wgain", "-w", type=float, default=1)
