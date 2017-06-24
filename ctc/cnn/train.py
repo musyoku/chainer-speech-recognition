@@ -156,7 +156,7 @@ def main():
 	print("vocab	{}".format(len(vocab)))
 
 	# ミニバッチサイズ
-	batchsizes = [64, 32, 32, 24, 24, 16, 16, 8, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+	batchsizes = [64, 32, 32, 24, 24, 16, 12, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
 
 	dataset = []
 	max_bucket_index = 0	# バケットの最大個数
@@ -303,19 +303,15 @@ def main():
 				y_batch = model(x_batch)	# list of variables
 				loss = connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
 
-				# 更新
-				try:
+				# NaN
+				loss_value = float(loss.data)
+				if loss_value == loss_value:
+					# 更新
 					optimizer.update(lossfun=lambda: loss)
-				except:
-					save_model(args.model_dir, model)
-					import traceback
-					traceback.print_exc()
-
-				loss = float(loss.data)
-				if loss != loss:
-					raise Exception("loss is NaN")
-				sum_loss += loss
-
+				else:
+					print("encountered NaN when computing loss!!!")
+					
+				sum_loss += loss_value
 				sys.stdout.write("\r" + stdout.CLEAR)
 				sys.stdout.write("\riteration {}/{}".format(itr, total_iterations_train))
 				sys.stdout.flush()
