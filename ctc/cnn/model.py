@@ -32,6 +32,7 @@ def save_model(dirname, model):
 		"num_conv_layers": model.num_conv_layers,
 		"num_fc_layers": model.num_fc_layers,
 		"kernel_size": model.kernel_size,
+		"nonlinearity": model.nonlinearity,
 		"dropout": model.dropout,
 		"weightnorm": model.weightnorm,
 		"layernorm": model.using_layernorm,
@@ -107,7 +108,7 @@ class LayerNormalization(chainer.link.Link):
 # Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
 # https://arxiv.org/abs/1701.02720
 class ZhangModel(Chain):
-	def __init__(self, vocab_size, num_conv_layers, num_fc_layers, ndim_audio_features, ndim_h, ndim_fc=1024, kernel_size=(3, 5), dropout=0, layernorm=False, weightnorm=False, residual=False, wgain=1, num_mel_filters=40):
+	def __init__(self, vocab_size, num_conv_layers, num_fc_layers, ndim_audio_features, ndim_h, ndim_fc=1024, nonlinearity="relu", kernel_size=(3, 5), dropout=0, layernorm=False, weightnorm=False, residual=False, wgain=1, num_mel_filters=40):
 		super(ZhangModel, self).__init__()
 		assert num_conv_layers > 0
 		assert num_fc_layers > 0
@@ -119,6 +120,7 @@ class ZhangModel(Chain):
 		self.ndim_audio_features = ndim_audio_features
 		self.ndim_h = ndim_h
 		self.ndim_fc = ndim_fc
+		self.nonlinearity = nonlinearity
 		self.kernel_size = kernel_size
 		self.weightnorm = weightnorm
 		self.using_layernorm = True if layernorm else False
@@ -161,6 +163,15 @@ class ZhangModel(Chain):
 
 	def get_fc_norm_layer(self, index):
 		return getattr(self, "fc_norm{}".format(index))
+
+	def activation(self, x):
+		if self.nonlinearity == "relu":
+			return F.relu(x)
+		if self.nonlinearity == "elu":
+			return F.elu(x)
+		if self.nonlinearity == "leaky_relu":
+			return F.leaky_relu(x)
+		raise NotImplementedError()
 
 	def forward_conv_layer(self, layer_index, in_data):
 		pad = self.kernel_size[1] - 1
@@ -211,7 +222,7 @@ class ZhangModel(Chain):
 		pad = self.kernel_size[1] - 1
 		out_data = self.input_conv(X)[..., :-pad]
 		out_data = self.normalize_input_conv_layer(out_data)
-		out_data = F.relu(out_data)
+		out_data = self.activation(out_data)
 		out_data = F.max_pooling_2d(out_data, ksize=(3, 1))
 
 		# residual connection
@@ -221,12 +232,12 @@ class ZhangModel(Chain):
 		for layer_index in xrange(self.num_conv_layers):
 			if self.using_layernorm:
 				out_data = self.normalize_conv_layer(layer_index, out_data)
-				out_data = F.relu(out_data)
+				out_data = self.activation(out_data)
 				out_data = self.forward_conv_layer(layer_index, out_data)
 			else:
 				out_data = self.forward_conv_layer(layer_index, out_data)
-				out_data = F.relu(out_data)
-			# out_data = F.relu(out_data)
+				out_data = self.activation(out_data)
+			# out_data = self.activation(out_data)
 			if self.using_dropout:
 				out_data = F.dropout(out_data, ratio=self.dropout)
 			if self.using_residual:
@@ -242,11 +253,11 @@ class ZhangModel(Chain):
 		for layer_index in xrange(self.num_fc_layers - 1):
 			if self.using_layernorm:
 				out_data = self.normalize_fc_layer(layer_index, out_data, batchsize, seq_length)
-				out_data = F.relu(out_data)
+				out_data = self.activation(out_data)
 				out_data = self.forward_fc_layer(layer_index, out_data)
 			else:
 				out_data = self.forward_fc_layer(layer_index, out_data)
-				out_data = F.relu(out_data)
+				out_data = self.activation(out_data)
 			if self.using_dropout:
 				out_data = F.dropout(out_data, ratio=self.dropout)
 			if self.using_residual:

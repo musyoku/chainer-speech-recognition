@@ -220,7 +220,10 @@ def main():
 	# モデル
 	model = load_model(args.model_dir)
 	if model is None:
-		model = ZhangModel(vocab_size, args.num_conv_layers, args.num_fc_layers, args.ndim_audio_features, args.ndim_h, ndim_fc=args.ndim_fc, dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm, residual=args.residual, wgain=args.wgain, num_mel_filters=num_mel_filters)
+		model = ZhangModel(vocab_size, args.num_conv_layers, args.num_fc_layers, args.ndim_audio_features, args.ndim_h,
+		 ndim_fc=args.ndim_fc, nonlinearity=args.nonlinear,
+		 dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm, 
+		 residual=args.residual, wgain=args.wgain, num_mel_filters=num_mel_filters)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu(args.gpu_device)
@@ -310,7 +313,7 @@ def main():
 					optimizer.update(lossfun=lambda: loss)
 				else:
 					print("encountered NaN when computing loss!!!")
-					
+
 				sum_loss += loss_value
 				sys.stdout.write("\r" + stdout.CLEAR)
 				sys.stdout.write("\riteration {}/{}".format(itr, total_iterations_train))
@@ -354,6 +357,7 @@ if __name__ == "__main__":
 	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
 	parser.add_argument("--wgain", "-w", type=float, default=1)
 
+	parser.add_argument("--nonlinear", type=str, default="relu")
 	parser.add_argument("--dropout", "-dropout", type=float, default=0)
 	parser.add_argument("--weightnorm", "-weightnorm", default=False, action="store_true")
 	parser.add_argument("--layernorm", "-layernorm", default=False, action="store_true")
