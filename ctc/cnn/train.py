@@ -40,6 +40,24 @@ def get_optimizer(name, lr, momentum):
 		return optimizers.Adam(alpha=lr, beta1=momentum)
 	raise NotImplementationError()
 
+def decay_learning_rate(opt, factor, final_value):
+	if isinstance(opt, optimizers.NesterovAG):
+		if opt.lr <= final_value:
+			return
+		opt.lr *= factor
+		return
+	if isinstance(opt, optimizers.SGD):
+		if opt.lr <= final_value:
+			return
+		opt.lr *= factor
+		return
+	if isinstance(opt, optimizers.Adam):
+		if opt.alpha <= final_value:
+			return
+		opt.alpha *= factor
+		return
+	raise NotImplementationError()
+
 def compute_character_error_rate(r, h):
 	if len(r) == 0:
 		return len(h)
@@ -78,7 +96,7 @@ def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stdd
 	for bucket_idx, (bucket, batchsize) in enumerate(zip(buckets, batchsizes)):
 		total_iterations = 1 if approximate else int(math.ceil(len(bucket) / batchsize))
 		sum_error = 0
-		for itr in xrange(total_iterations):
+		for itr in xrange(1, total_iterations + 1):
 
 			x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, batchsize, BLANK)
 			x_batch = (x_batch - mean_x_batch) / stddev_x_batch
@@ -120,7 +138,6 @@ def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stdd
 			bucket = np.roll(bucket, batchsize)
 
 		errors.append(sum_error * 100.0 / batchsize / total_iterations)
-	print("\n")
 	return errors
 
 def main():
@@ -321,6 +338,7 @@ def main():
 		sys.stdout.write("\r" + stdout.CLEAR)
 		sys.stdout.flush()
 		save_model(args.model_dir, model)
+		decay_learning_rate(optimizer, args.lr_decay, final_learning_rate)
 
 		# バリデーション
 		with chainer.using_config("train", False):
