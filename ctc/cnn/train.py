@@ -120,16 +120,16 @@ def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stdd
 			bucket = np.roll(bucket, batchsize)
 
 		errors.append(sum_error * 100.0 / batchsize / total_iterations)
-
+	print("\n")
 	return errors
 
 def main():
 	wav_paths = [
-		"/home/aibo/sandbox/CSJ/WAV/core/",
+		"/home/stark/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/aibo/sandbox/CSJ_/core/",
+		"/home/stark/sandbox/CSJ_/core/",
 	]
 
 	sampling_rate = 16000
@@ -233,7 +233,7 @@ def main():
 	optimizer = get_optimizer(args.optimizer, args.learning_rate, args.momentum)
 	optimizer.setup(model)
 	optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
-	# optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
+	optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
 	final_learning_rate = 1e-4
 	total_time = 0
 
@@ -274,7 +274,6 @@ def main():
 		sum_loss = 0
 		
 		with chainer.using_config("train", True):
-
 			for itr in xrange(1, total_iterations_train + 1):
 				bucket_idx = int(np.random.choice(np.arange(len(buckets_train)), size=1, p=buckets_distribution))
 				bucket = buckets_train[bucket_idx]
@@ -312,7 +311,7 @@ def main():
 					# 更新
 					optimizer.update(lossfun=lambda: loss)
 				else:
-					print("encountered NaN when computing loss!!!")
+					print("Encountered NaN when computing loss.")
 
 				sum_loss += loss_value
 				sys.stdout.write("\r" + stdout.CLEAR)
@@ -337,6 +336,7 @@ def main():
 		print("	loss:", sum_loss / total_iterations_train)
 		print("	CER (train):	", train_error)
 		print("	CER (dev):	", dev_error)
+		print("	lr: {}".format(get_current_learning_rate(optimizer)))
 		total_time += elapsed_time
 
 
