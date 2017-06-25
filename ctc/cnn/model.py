@@ -130,14 +130,13 @@ class ZhangModel(Chain):
 		self.wgain = wgain
 
 		with self.init_scope():
-			output_scale = 2 if nonlinearity == "maxout" else 1
 			wstd = math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])
-			setattr(self, "input_conv", Convolution2D(ndim_audio_features, ndim_h * output_scale, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
+			setattr(self, "input_conv", Convolution2D(ndim_audio_features, ndim_h, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
 			setattr(self, "input_conv_norm", LayerNormalization((ndim_h,)))
 
 			wstd = math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])
 			for i in xrange(num_conv_layers):
-				setattr(self, "conv{}".format(i), Convolution2D(ndim_h, ndim_h * output_scale, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
+				setattr(self, "conv{}".format(i), Convolution2D(ndim_h, ndim_h, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(wstd), weightnorm=weightnorm))
 				setattr(self, "conv_norm{}".format(i), LayerNormalization((ndim_h,)))
 
 			kernel_height = int(math.ceil((num_mel_filters - 2) / 3))
@@ -145,10 +144,10 @@ class ZhangModel(Chain):
 				setattr(self, "fc0", Convolution2D(ndim_h, vocab_size, (kernel_height, 1), stride=1, pad=0))
 				setattr(self, "fc_norm0", LayerNormalization((ndim_h,)))
 			else:
-				setattr(self, "fc0", Convolution2D(ndim_h, ndim_fc * output_scale, (kernel_height, 1), stride=1, pad=0))
+				setattr(self, "fc0", Convolution2D(ndim_h, ndim_fc, (kernel_height, 1), stride=1, pad=0))
 				setattr(self, "fc_norm0", LayerNormalization((ndim_h,)))
 				for i in xrange(num_fc_layers - 2):
-					setattr(self, "fc{}".format(i + 1), Convolution2D(ndim_fc, ndim_fc * output_scale, ksize=1, stride=1, pad=0))
+					setattr(self, "fc{}".format(i + 1), Convolution2D(ndim_fc, ndim_fc, ksize=1, stride=1, pad=0))
 					setattr(self, "fc_norm{}".format(i + 1), LayerNormalization((ndim_fc,)))
 				setattr(self, "fc{}".format(num_fc_layers - 1), Convolution2D(ndim_fc, vocab_size, ksize=1, stride=1, pad=0))
 				setattr(self, "fc_norm{}".format(num_fc_layers - 1), LayerNormalization((ndim_fc,)))
@@ -172,8 +171,6 @@ class ZhangModel(Chain):
 			return F.elu(x)
 		if self.nonlinearity == "leaky_relu":
 			return F.leaky_relu(x)
-		if self.nonlinearity == "maxout":
-			return F.maxout(x, 2, axis=1)
 		raise NotImplementedError()
 
 	def forward_conv_layer(self, layer_index, in_data):
