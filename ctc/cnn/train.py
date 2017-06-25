@@ -126,8 +126,8 @@ def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stdd
 						continue
 					pred_seqence.append(int(token))
 					prev_token = token
-				if approximate == True:
-					print("true:", target_sequence, "pred:", pred_seqence)
+				# if approximate == True:
+				# 	print("true:", target_sequence, "pred:", pred_seqence)
 				error = compute_character_error_rate(target_sequence, pred_seqence)
 				sum_error += error
 
@@ -142,11 +142,11 @@ def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stdd
 
 def main():
 	wav_paths = [
-		"/home/stark/sandbox/CSJ/WAV/core/",
+		"/home/aibo/sandbox/CSJ/WAV/core/",
 	]
 
 	transcription_paths = [
-		"/home/stark/sandbox/CSJ_/core/",
+		"/home/aibo/sandbox/CSJ_/core/",
 	]
 
 	sampling_rate = 16000
@@ -196,6 +196,8 @@ def main():
 	batchsizes = batchsizes[:len(tmp_buckets)]
 	buckets_train = []
 	buckets_dev = []
+	sum_buckets_train = 0
+	sum_buckets_dev = 0
 	print_bold("bucket	#train	#dev	sec")
 	for idx, (bucket, batchsize) in enumerate(zip(tmp_buckets, batchsizes)):
 		if bucket is None:
@@ -213,10 +215,11 @@ def main():
 		bucket_train = bucket[num_dev:]
 		buckets_dev.append(bucket_dev)
 		buckets_train.append(bucket_train)
-
+		sum_buckets_train += len(bucket_train)
+		sum_buckets_dev += len(bucket_dev)
 		print("{}	{:>6}	{:>4}	{:>6.3f}".format(idx + 1, len(bucket_train), len(bucket_dev), (idx + 1) * 512 * 16 / sampling_rate))
 
-	print("total {} buckets.".format(len(buckets_train)))
+	print("total	{:>6}	{:>4}".format(sum_buckets_train, sum_buckets_dev))
 
 	# バケットごとのデータ量の差を学習回数によって補正する
 	# データが多いバケットほど多くの学習（ミニバッチのサンプリング）を行う
@@ -286,7 +289,7 @@ def main():
 	xp.random.seed(0)
 
 	for epoch in xrange(1, args.total_epoch + 1):
-		print("Epoch", epoch)
+		print_bold("Epoch %d" % epoch)
 		start_time = time.time()
 		sum_loss = 0
 		
