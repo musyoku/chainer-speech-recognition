@@ -9,7 +9,7 @@ import chainer.functions as F
 from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
 from dataset import load_audio_and_transcription, get_minibatch, get_vocab
-from model import ZhangModel, load_model, save_model
+from model import AcousticModel, load_model, save_model, build_model
 from ctc import connectionist_temporal_classification
 
 class stdout:
@@ -238,12 +238,22 @@ def main():
 		buckets_train[idx] = bucket
 
 	# モデル
+	chainer.global_config.vocab_size = vocab_size
+	chainer.global_config.ndim_audio_features = args.ndim_audio_features
+	chainer.global_config.ndim_h = args.ndim_h
+	chainer.global_config.ndim_dense = args.ndim_dense
+	chainer.global_config.kernel_size = (3, 5)
+	chainer.global_config.dropout = args.dropout
+	chainer.global_config.weightnorm = args.weightnorm
+	chainer.global_config.wgain = args.wgain
+	chainer.global_config.architecture = args.architecture
+
 	model = load_model(args.model_dir)
 	if model is None:
-		model = ZhangModel(vocab_size, args.num_conv_layers, args.num_fc_layers, args.ndim_audio_features, args.ndim_h,
-		 ndim_fc=args.ndim_fc, nonlinearity=args.nonlinear,
-		 dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm, 
-		 residual=args.residual, wgain=args.wgain, num_mel_filters=num_mel_filters)
+		config = chainer.config
+		model = build_model(vocab_size=vocab_size, ndim_audio_features=config.ndim_audio_features, ndim_h=config.ndim_h, ndim_dense=config.ndim_dense,
+		 kernel_size=(3, 5), dropout=config.dropout, weightnorm=config.weightnorm, wgain=config.wgain,
+		 num_mel_filters=config.num_mel_filters, architecture=config.architecture)
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu(args.gpu_device)
@@ -341,7 +351,6 @@ def main():
 		sys.stdout.write("\r" + stdout.CLEAR)
 		sys.stdout.flush()
 		save_model(args.model_dir, model)
-		decay_learning_rate(optimizer, args.lr_decay, final_learning_rate)
 
 		# バリデーション
 		with chainer.using_config("train", False):
@@ -351,6 +360,7 @@ def main():
 		sys.stdout.write(stdout.MOVE)
 		sys.stdout.write(stdout.LEFT)
 
+		# ログ
 		elapsed_time = time.time() - start_time
 		print("Epoch {} done in {} min".format(epoch, int(elapsed_time / 60)))
 		sys.stdout.write(stdout.CLEAR)
@@ -360,6 +370,8 @@ def main():
 		print("	lr: {}".format(get_current_learning_rate(optimizer)))
 		total_time += elapsed_time
 
+		# 学習率の減衰
+		decay_learning_rate(optimizer, args.lr_decay, final_learning_rate)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
@@ -372,17 +384,14 @@ if __name__ == "__main__":
 	parser.add_argument("--optimizer", "-opt", type=str, default="adam")
 	
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
-	parser.add_argument("--ndim-h", "-nh", type=int, default=320)
-	parser.add_argument("--ndim-fc", "-nfc", type=int, default=1024)
-	parser.add_argument("--num-conv-layers", "-conv", type=int, default=2)
-	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
+	parser.add_argument("--ndim-h", "-dh", type=int, default=320)
+	parser.add_argument("--ndim-dense", "-dd", type=int, default=1024)
 	parser.add_argument("--wgain", "-w", type=float, default=1)
 
 	parser.add_argument("--nonlinear", type=str, default="relu")
 	parser.add_argument("--dropout", "-dropout", type=float, default=0)
 	parser.add_argument("--weightnorm", "-weightnorm", default=False, action="store_true")
-	parser.add_argument("--layernorm", "-layernorm", default=False, action="store_true")
-	parser.add_argument("--residual", "-residual", default=False, action="store_true")
+	parser.add_argument("--architecture", "-arch", type=str, default="zhang")
 	
 	parser.add_argument("--gpu-device", "-g", type=int, default=0) 
 	parser.add_argument("--interval", type=int, default=100)

@@ -18,7 +18,7 @@ def _logsumexp(a, xp, axis=None):
 def _softmax(x, xp):
 	val = xp.exp(x - xp.amax(x, axis=2, keepdims=True))
 	val /= xp.sum(val, axis=2, keepdims=True)
-	return val + 1e-8
+	return xp.clip(val + 1e-4, 0, 1)
 
 def _label_to_path(labels, blank_symbol, xp):
 	path = xp.full((len(labels), labels.shape[1] * 2 + 1), blank_symbol, dtype=numpy.int32)
@@ -360,7 +360,7 @@ class ConnectionistTemporalClassification(function.Function):
 
 			# total probability should be constant regardless of t
 			std = xp.std(__total_probability, axis=0)
-			threshold = 1e-3
+			threshold = 1e-2
 			
 			# print(inputs[0])
 			# print(inputs[1])
