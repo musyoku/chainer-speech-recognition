@@ -173,6 +173,8 @@ def main():
 	for bucket_idx, (feature_batch, batchsize) in enumerate(zip(_buckets_feature, batchsizes)):
 		if len(feature_batch) < batchsize:
 			continue
+		if args.buckets_limit is not None and bucket_idx > args.buckets_limit:
+			continue
 		buckets_feature.append(_buckets_feature[bucket_idx])
 		buckets_feature_length.append(_buckets_feature_length[bucket_idx])
 		buckets_sentence.append(_buckets_sentence[bucket_idx])
