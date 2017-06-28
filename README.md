@@ -1,4 +1,4 @@
-# Character Level Recognition Recognition
+# Character Level Speech Recognition
 
 in progress ...
 
