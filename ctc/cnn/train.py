@@ -86,17 +86,25 @@ def decay_learning_rate(opt, factor, final_value):
 		return
 	raise NotImplementationError()
 
-def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=True):
+def compute_error(model, buckets_indices, buckets_feature, buckets_feature_length, buckets_sentence, buckets_batchsize, BLANK, mean_x_batch, stddev_x_batch, approximate=True):
 	errors = []
 	xp = model.xp
-	for bucket_idx, (bucket, batchsize) in enumerate(zip(buckets, batchsizes)):
-		if len(bucket) < batchsize:
-			continue
-		total_iterations = 1 if approximate else int(math.ceil(len(bucket) / batchsize))
+	for bucket_idx in xrange(len(buckets_indices)):
+		data_indices = buckets_indices[bucket_idx]
+		batchsize = buckets_batchsize[bucket_idx]
+		feature_bucket = buckets_feature[bucket_idx]
+		feature_length_bucket = buckets_feature_length[bucket_idx]
+		sentence_bucket = buckets_sentence[bucket_idx]
+
+		total_iterations = 1 if approximate else int(math.ceil(len(data_indices) / batchsize))
+
+		if total_iterations == 1 and len(data_indices) < batchsize:
+			batchsize = len(data_indices)
+
 		sum_error = 0
 		for itr in xrange(1, total_iterations + 1):
 
-			x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, batchsize, BLANK)
+			x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, BLANK)
 			x_batch = (x_batch - mean_x_batch) / stddev_x_batch
 
 			if model.xp is cuda.cupy:
@@ -131,9 +139,9 @@ def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stdd
 
 
 			sys.stdout.write("\r" + stdout.CLEAR)
-			sys.stdout.write("\rComputing error - bucket {}/{} - iteration {}/{}".format(bucket_idx + 1, len(buckets), itr, total_iterations))
+			sys.stdout.write("\rComputing error - bucket {}/{} - iteration {}/{}".format(bucket_idx + 1, len(buckets_indices), itr, total_iterations))
 			sys.stdout.flush()
-			bucket = np.roll(bucket, batchsize)
+			data_indices = np.roll(data_indices, batchsize)
 
 		errors.append(sum_error * 100.0 / batchsize / total_iterations)
 	return errors
@@ -156,29 +164,27 @@ def main():
 	chainer.global_config.using_delta_delta = True
 
 	# データの読み込み
-	_buckets_feature, _buckets_feature_length, _buckets_sentence, _buckets_sentence_length, mean_x_batch, stddev_x_batch = load_buckets(args.buckets_limit, args.data_limit)
+	_buckets_feature, _buckets_feature_length, _buckets_sentence, mean_x_batch, stddev_x_batch = load_buckets(args.buckets_limit, args.data_limit)
 
 	# ミニバッチを取れないものは除外
-	batchsizes = [64, 64, 32, 32, 32, 24, 24, 24, 16, 16, 16, 4, 4, 4, 4, 4, 4, 4, 4]
+	batchsizes = [64, 32, 32, 32, 32, 24, 24, 24, 16, 16, 16, 4, 4, 4, 4, 4, 4, 4, 4]
 	batchsizes = batchsizes[:len(_buckets_feature)]
 
 	buckets_feature = []
 	buckets_feature_length = []
 	buckets_sentence = []
-	buckets_sentence_length = []
 	buckets_batchsize = []
 
 	dataset_size = 0
 
-	for bucket_idx, (feature_batch, batchsize) in enumerate(zip(_buckets_feature, batchsizes)):
-		if len(feature_batch) < batchsize:
+	for bucket_idx, (feature_bucket, batchsize) in enumerate(zip(_buckets_feature, batchsizes)):
+		if len(feature_bucket) < batchsize:
 			continue
 		if args.buckets_limit is not None and bucket_idx > args.buckets_limit:
 			continue
 		buckets_feature.append(_buckets_feature[bucket_idx])
 		buckets_feature_length.append(_buckets_feature_length[bucket_idx])
 		buckets_sentence.append(_buckets_sentence[bucket_idx])
-		buckets_sentence_length.append(_buckets_sentence_length[bucket_idx])
 		buckets_batchsize.append(batchsize)
 		dataset_size += len(buckets_feature[-1])
 	
@@ -211,68 +217,15 @@ def main():
 		total_dev += len(indices_dev)
 	print("total	{:>6}	{:>4}".format(total_train, total_dev))
 
-	raise Exception()
-	
-
-	dataset = []
-	max_bucket_index = 0	# バケットの最大個数
-	for signal, sentence in pair:
-		# 転記、対数メルフィルタバンク出力、Δ、ΔΔの順で並べる
-		dataset.append((signal, sentence, None, None, None))
-		bucket_idx = get_bucket_index(signal)
-		if bucket_idx > max_bucket_index:
-			max_bucket_index = bucket_idx
-
-	tmp_buckets = [None] * (max_bucket_index + 1)
-	for idx, data in enumerate(dataset):
-		signal = data[0]
-		bucket_idx = get_bucket_index(signal)
-		if tmp_buckets[bucket_idx] is None:
-			tmp_buckets[bucket_idx] = []
-		tmp_buckets[bucket_idx].append(idx)
-
-	buckets_train = []
-	buckets_dev = []
-	sum_buckets_train = 0
-	sum_buckets_dev = 0
-	print_bold("bucket	#train	#dev	sec")
-	for idx, (bucket, batchsize) in enumerate(zip(tmp_buckets, batchsizes)):
-		if bucket is None:
-			continue
-		if len(bucket) < batchsize:	# ミニバッチサイズより少ない場合はスキップ
-			continue
-		if args.buckets_limit is not None and idx > args.buckets_limit:
-			continue
-
-		# split into train and dev
-		bucket = np.asarray(bucket)
-		np.random.shuffle(bucket)
-		num_dev = int(len(bucket) * args.dev_split)
-		bucket_dev = bucket[:num_dev]
-		bucket_train = bucket[num_dev:]
-		buckets_dev.append(bucket_dev)
-		buckets_train.append(bucket_train)
-		sum_buckets_train += len(bucket_train)
-		sum_buckets_dev += len(bucket_dev)
-		print("{}	{:>6}	{:>4}	{:>6.3f}".format(idx + 1, len(bucket_train), len(bucket_dev), (idx + 1) * 512 * 16 / sampling_rate))
-
-	print("total	{:>6}	{:>4}".format(sum_buckets_train, sum_buckets_dev))
-
 	# バケットごとのデータ量の差を学習回数によって補正する
 	# データが多いバケットほど多くの学習（ミニバッチのサンプリング）を行う
-	batchsizes = batchsizes[:len(buckets_train)]
+	batchsizes = batchsizes[:len(buckets_indices_train)]
 	required_interations = []
-	for bucket, batchsize in zip(buckets_train, batchsizes):
+	for bucket, batchsize in zip(buckets_indices_train, batchsizes):
 		itr = int(math.ceil(len(bucket) / batchsize))
 		required_interations.append(itr)
 	total_iterations_train = sum(required_interations)
 	buckets_distribution = np.asarray(required_interations, dtype=float) / total_iterations_train
-
-	# numpy配列に変換
-	for idx, bucket in enumerate(buckets_train):
-		bucket = np.asarray(bucket)
-		np.random.shuffle(bucket)
-		buckets_train[idx] = bucket
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
@@ -304,37 +257,6 @@ def main():
 	final_learning_rate = 1e-4
 	total_time = 0
 
-	# statistics
-	mean_filename = "mean.npy"	
-	std_filename = "std.npy"	
-	mean_x_batch = None
-	stddev_x_batch = None
-
-	if os.path.isfile(mean_filename):
-		print("loading {} ...".format(mean_filename))
-		mean_x_batch = np.load(mean_filename)
-	if os.path.isfile(std_filename):
-		print("loading {} ...".format(std_filename))
-		stddev_x_batch = np.load(std_filename)
-
-	if mean_x_batch is None:
-		mean_x_batch = 0
-		stddev_x_batch = 0
-		for bucket_idx in xrange(len(buckets_train)):
-			bucket = buckets_train[bucket_idx]
-			x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, len(bucket), BLANK)
-			mean_x_batch += np.mean(x_batch, axis=(0, 3), keepdims=True)
-			stddev_x_batch += np.std(x_batch, axis=(0, 3), keepdims=True)
-		np.save(mean_filename, mean_x_batch / len(buckets_train))
-		np.save(std_filename, stddev_x_batch / len(buckets_train))
-
-	# running_mean = 0
-	# running_std = 0
-	# running_z = 0
-
-	np.random.seed(0)
-	xp.random.seed(0)
-
 	for epoch in xrange(1, args.total_epoch + 1):
 		print_bold("Epoch %d" % epoch)
 		start_time = time.time()
@@ -342,21 +264,16 @@ def main():
 		
 		with chainer.using_config("train", True):
 			for itr in xrange(1, total_iterations_train + 1):
-				bucket_idx = int(np.random.choice(np.arange(len(buckets_train)), size=1, p=buckets_distribution))
-				bucket = buckets_train[bucket_idx]
-				batchsize = batchsizes[bucket_idx]
-				np.random.shuffle(bucket)
+				bucket_idx = int(np.random.choice(np.arange(len(buckets_indices_train)), size=1, p=buckets_distribution))
+				data_indices = buckets_indices_train[bucket_idx]
+				batchsize = buckets_batchsize[bucket_idx]
+				np.random.shuffle(data_indices)
 
-				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(bucket, dataset, batchsize, BLANK)
-				feature_dim = x_batch.shape[1]
+				feature_bucket = buckets_feature[bucket_idx]
+				feature_length_bucket = buckets_feature_length[bucket_idx]
+				sentence_bucket = buckets_sentence[bucket_idx]
 
-				# 平均と分散を計算
-				# 本来は学習前にデータ全体の平均・分散を計算すべきだが、データ拡大を用いるため、逐一更新していくことにする
-				# mean_x_batch = np.mean(x_batch, axis=(0, 3), keepdims=True)
-				# stddev_x_batch = np.std(x_batch, axis=(0, 3), keepdims=True)
-				# running_mean = running_mean * (running_z / (running_z + 1)) + mean_x_batch / (running_z + 1)	# 正規化定数が+1されることに注意
-				# running_std = running_std * (running_z / (running_z + 1)) + stddev_x_batch / (running_z + 1)		# 正規化定数が+1されることに注意
-				# running_z += 1
+				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, BLANK)
 
 				# 正規化
 				x_batch = (x_batch - mean_x_batch) / stddev_x_batch
@@ -391,8 +308,8 @@ def main():
 
 		# バリデーション
 		with chainer.using_config("train", False):
-			train_error = compute_error(buckets_train, batchsizes, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=True)
-			dev_error = compute_error(buckets_dev, batchsizes, model, dataset, BLANK, mean_x_batch, stddev_x_batch, approximate=False)
+			train_error = compute_error(model, buckets_indices_train, buckets_feature, buckets_feature_length, buckets_sentence, buckets_batchsize, BLANK, mean_x_batch, stddev_x_batch, approximate=True)
+			dev_error = compute_error(model, buckets_indices_dev, buckets_feature, buckets_feature_length, buckets_sentence, buckets_batchsize, BLANK, mean_x_batch, stddev_x_batch, approximate=False)
 
 		sys.stdout.write(stdout.MOVE)
 		sys.stdout.write(stdout.LEFT)

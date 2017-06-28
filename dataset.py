@@ -5,6 +5,7 @@ import os, codecs, re, sys
 import chainer
 import numpy as np
 import scipy.io.wavfile as wavfile
+import pickle
 from python_speech_features import logfbank
 from python_speech_features import fbank
 
@@ -51,23 +52,20 @@ def get_vocab():
 
 	return vocab, vocab_inv, id_blank
 
-def get_minibatch(bucket, dataset, batchsize, id_blank):
-	assert len(bucket) >= batchsize
+def get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, id_blank):
+	assert len(data_indices) >= batchsize
 	config = chainer.config
-	indices = bucket[:batchsize]
+	indices = data_indices[:batchsize]
 	max_x_width = 0
 	max_t_width = 0
 
-	for idx in indices:
-		data = dataset[idx]
-		signal, sentence, logmel, delta, delta_delta = data
-		if logmel is None:
-			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
-			dataset[idx] = signal, sentence, logmel, delta, delta_delta
+	for data_idx in indices:
+		feature = feature_bucket[data_idx]
+		sentence = sentence_bucket[data_idx]
 		if len(sentence) > max_t_width:
 			max_t_width = len(sentence)
-		if logmel.shape[1] > max_x_width:
-			max_x_width = logmel.shape[1]
+		if feature.shape[2] > max_x_width:
+			max_x_width = feature.shape[2]
 
 	x_batch = np.zeros((batchsize, 3, config.num_mel_filters, max_x_width), dtype=np.float32)
 	t_batch = np.full((batchsize, max_t_width), id_blank, dtype=np.int32)
@@ -75,15 +73,13 @@ def get_minibatch(bucket, dataset, batchsize, id_blank):
 	t_valid_length = []
 
 	for batch_idx, data_idx in enumerate(indices):
-		data = dataset[data_idx]
-		signal, sentence, logmel, delta, delta_delta = data
-		x_length = logmel.shape[1]
+		feature = feature_bucket[data_idx]
+		sentence = sentence_bucket[data_idx]
+		x_length = feature_length_bucket[data_idx]
 		t_length = len(sentence)
 
 		# x
-		x_batch[batch_idx, 0, :, :logmel.shape[1]] = logmel
-		x_batch[batch_idx, 1, :, :delta.shape[1]] = delta
-		x_batch[batch_idx, 2, :, :delta_delta.shape[1]] = delta_delta
+		x_batch[batch_idx, :, :, :x_length] = feature[..., :x_length]
 		x_valid_length.append(x_length)
 
 		# CTCが適用可能かチェック
@@ -263,9 +259,6 @@ def load_buckets(buckets_limit, data_limit):
 		if os.path.isfile(os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx)) == False:
 			cache_available = False
 			break
-		if os.path.isfile(os.path.join(data_cache_path, "sentence_length_%d.npy" % bucket_idx)) == False:
-			cache_available = False
-			break
 	if os.path.isfile(mean_filename) == False:
 		cache_available = False
 	if os.path.isfile(std_filename) == False:
@@ -277,18 +270,17 @@ def load_buckets(buckets_limit, data_limit):
 		buckets_feature = []
 		buckets_feature_length = []
 		buckets_sentence = []
-		buckets_sentence_length = []
 
 		for bucket_idx in xrange(buckets_limit):
 			feature_batch = np.load(os.path.join(data_cache_path, "feature_%d.npy" % bucket_idx))
-			feature_length_batch = np.load(os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx))
-			sentence_batch = np.load(os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx))
-			sentence_length_batch = np.load(os.path.join(data_cache_path, "sentence_length_%d.npy" % bucket_idx))
+			with open (os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx), "rb") as f:
+				sentence_batch = pickle.load(f)
+			with open (os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx), "rb") as f:
+				feature_length_batch = pickle.load(f)
 
 			buckets_feature.append(feature_batch)
 			buckets_feature_length.append(feature_length_batch)
 			buckets_sentence.append(sentence_batch)
-			buckets_sentence_length.append(sentence_length_batch)
 
 		mean_x_batch = np.load(mean_filename)
 		stddev_x_batch = np.load(std_filename)
@@ -349,16 +341,13 @@ def load_buckets(buckets_limit, data_limit):
 		buckets_feature = [None] * buckets_length
 		buckets_feature_length = [None] * buckets_length
 		buckets_sentence = [None] * buckets_length
-		buckets_sentence_length = [None] * buckets_length
 
 		for bucket_idx in xrange(buckets_length):
 			num_data = buckets_volume[bucket_idx]
 			max_feature_length = max_feature_length_for_bucket[bucket_idx]
-			max_sentence_length = max_sentence_length_for_bucket[bucket_idx]
 			buckets_feature[bucket_idx] = np.zeros((num_data, 3, config.num_mel_filters, max_feature_length), dtype=np.float32)
-			buckets_feature_length[bucket_idx] = np.zeros((num_data,), dtype=np.int32)
-			buckets_sentence[bucket_idx] = np.zeros((num_data, max_sentence_length), dtype=np.int32)
-			buckets_sentence_length[bucket_idx] = np.zeros((num_data,), dtype=np.int32)
+			buckets_feature_length[bucket_idx] = []
+			buckets_sentence[bucket_idx] = []
 
 		for idx, data in enumerate(dataset):
 			if idx % 100 == 0:
@@ -388,36 +377,23 @@ def load_buckets(buckets_limit, data_limit):
 			stddev_x_batch += np.std(feature_batch[insert_idx, :, :, :feature_length], axis=2, keepdims=True) / valid_dataset_size	
 
 			# 書き起こし
-			sentence_batch = buckets_sentence[bucket_idx]
-			sentence_batch[insert_idx, :sentence_length] = sentence
+			buckets_sentence[bucket_idx].append(sentence)
 
 			# 音響特徴量の有効長
-			feature_length_batch = buckets_feature_length[bucket_idx]
-			feature_length_batch[insert_idx] = feature_length
-
-			# 書き起こしの有効長
-			sentence_length_batch = buckets_sentence_length[bucket_idx]
-			sentence_length_batch[insert_idx] = sentence_length
-
-		# for bucket_idx in xrange(buckets_length):
-		# 	feature_batch = buckets_feature[bucket_idx]
-		# 	sentence_batch = buckets_sentence[bucket_idx]
-		# 	if feature_batch is None:
-		# 		continue
-		# 	if sentence_batch is None:
-		# 		continue
-		# 	print(bucket_idx, feature_batch.shape, sentence_batch.shape, get_duration_seconds(feature_batch.shape[3]))
+			buckets_feature_length[bucket_idx].append(feature_length)
 
 		# ディスクにキャッシュ
 		for bucket_idx in xrange(buckets_length):
 			feature_batch = buckets_feature[bucket_idx]
 			feature_length_batch = buckets_feature_length[bucket_idx]
 			sentence_batch = buckets_sentence[bucket_idx]
-			sentence_length_batch = buckets_sentence_length[bucket_idx]
+
 			np.save(os.path.join(data_cache_path, "feature_%d.npy" % bucket_idx), feature_batch)
-			np.save(os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx), feature_length_batch)
-			np.save(os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx), sentence_batch)
-			np.save(os.path.join(data_cache_path, "sentence_length_%d.npy" % bucket_idx), sentence_length_batch)
+			with open (os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx), "wb") as f:
+				pickle.dump(feature_length_batch, f)
+			with open (os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx), "wb") as f:
+				pickle.dump(sentence_batch, f)
+
 		np.save(mean_filename, mean_x_batch)
 		np.save(std_filename, stddev_x_batch)
 
@@ -425,4 +401,4 @@ def load_buckets(buckets_limit, data_limit):
 	mean_x_batch = mean_x_batch[None, ...]
 	stddev_x_batch = stddev_x_batch[None, ...]
 
-	return buckets_feature, buckets_feature_length, buckets_sentence, buckets_sentence_length, mean_x_batch, stddev_x_batch
+	return buckets_feature, buckets_feature_length, buckets_sentence, mean_x_batch, stddev_x_batch
