@@ -8,7 +8,7 @@ import numpy as np
 import chainer.functions as F
 from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
-from dataset import get_minibatch, get_vocab, load_buckets
+from dataset import get_minibatch, get_vocab, load_buckets, get_duration_seconds
 from model import AcousticModel, load_model, save_model, build_model
 from ctc import connectionist_temporal_classification
 
@@ -21,10 +21,6 @@ class stdout:
 
 def print_bold(str):
 	print(stdout.BOLD + str + stdout.END)
-
-# バケットのインデックスを計算
-def get_bucket_index(signal):
-	return len(signal) // 16
 
 def get_current_learning_rate(opt):
 	if isinstance(opt, optimizers.NesterovAG):
@@ -160,35 +156,61 @@ def main():
 	chainer.global_config.using_delta_delta = True
 
 	# データの読み込み
-	feature_batch, feature_length_batch, sentence_batch, sentence_length_batch, mean_x_batch, stddev_x_batch = load_buckets(args.buckets_limit, args.data_limit)
+	_buckets_feature, _buckets_feature_length, _buckets_sentence, _buckets_sentence_length, mean_x_batch, stddev_x_batch = load_buckets(args.buckets_limit, args.data_limit)
+
+	# ミニバッチを取れないものは除外
+	batchsizes = [64, 64, 32, 32, 32, 24, 24, 24, 16, 16, 16, 4, 4, 4, 4, 4, 4, 4, 4]
+	batchsizes = batchsizes[:len(_buckets_feature)]
+
+	buckets_feature = []
+	buckets_feature_length = []
+	buckets_sentence = []
+	buckets_sentence_length = []
+	buckets_batchsize = []
+
+	dataset_size = 0
+
+	for bucket_idx, (feature_batch, batchsize) in enumerate(zip(_buckets_feature, batchsizes)):
+		if len(feature_batch) < batchsize:
+			continue
+		buckets_feature.append(_buckets_feature[bucket_idx])
+		buckets_feature_length.append(_buckets_feature_length[bucket_idx])
+		buckets_sentence.append(_buckets_sentence[bucket_idx])
+		buckets_sentence_length.append(_buckets_sentence_length[bucket_idx])
+		buckets_batchsize.append(batchsize)
+		dataset_size += len(buckets_feature[-1])
+	
+	buckets_size = len(buckets_feature)
 	vocab, vocab_inv, BLANK = get_vocab()
 	vocab_size = len(vocab)
 	print_bold("data	#")
-	print("audio	{}".format(len(feature_batch)))
-	print("vocab	{}".format(len(vocab)))
+	print("audio	{}".format(dataset_size))
+	print("vocab	{}".format(vocab_size))
 
-	# ミニバッチサイズ
-	batchsizes = [64, 32, 32, 24, 24, 16, 12, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
-
-	dataset = []
-	max_bucket_index = 0	# バケットの最大個数
-	for data_idx in xrange(len(feature_batch)):
-		feature_length = feature_length_batch[data_idx]
-		feature = feature_batch[data_idx, :, :, :feature_length]
-		sentence_length = sentence_length_batch[data_idx]
-		sentence = sentence_batch[data_idx, :sentence_length]
-		dataset.append((sentence, feature))
-		bucket_idx = get_bucket_index(feature)
-		if bucket_idx > max_bucket_index:
-			max_bucket_index = bucket_idx
-
-	del feature_batch
-	del feature_length_batch
-	del sentence_batch
-	del sentence_length_batch
+	# 訓練データとテストデータに分ける
+	print_bold("bucket	#train	#dev	sec")
+	np.random.seed(args.seed)
+	buckets_indices_train = []
+	buckets_indices_dev = []
+	total_train = 0
+	total_dev = 0
+	for bucket_idx in xrange(buckets_size):
+		bucket = buckets_feature[bucket_idx]
+		bucket_size = len(bucket)
+		num_dev = int(bucket_size * args.dev_split)
+		indices = np.arange(0, bucket_size)
+		np.random.shuffle(indices)
+		indices_dev = indices[:num_dev]
+		indices_train = indices[num_dev:]
+		buckets_indices_train.append(indices_train)
+		buckets_indices_dev.append(indices_dev)
+		print("{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, len(indices_train), len(indices_dev), get_duration_seconds(bucket.shape[3])))
+		total_train += len(indices_train)
+		total_dev += len(indices_dev)
+	print("total	{:>6}	{:>4}".format(total_train, total_dev))
 
 	raise Exception()
-
+	
 
 	dataset = []
 	max_bucket_index = 0	# バケットの最大個数
@@ -207,7 +229,6 @@ def main():
 			tmp_buckets[bucket_idx] = []
 		tmp_buckets[bucket_idx].append(idx)
 
-	batchsizes = batchsizes[:len(tmp_buckets)]
 	buckets_train = []
 	buckets_dev = []
 	sum_buckets_train = 0
@@ -416,6 +437,7 @@ if __name__ == "__main__":
 
 	parser.add_argument("--buckets-limit", type=int, default=None)
 	parser.add_argument("--data-limit", type=int, default=None)
+	parser.add_argument("--seed", "-seed", type=int, default=0)
 	args = parser.parse_args()
 
 	main()

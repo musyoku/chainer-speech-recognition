@@ -137,7 +137,7 @@ def load_audio_features_and_transcriptions(wav_paths, transcription_paths, bucke
 		trn_fs.sort()
 		assert len(wav_fs) == len(trn_fs)
 
-		for data_index, (wav_filename, trn_filename) in enumerate(zip(wav_fs, trn_fs)):
+		for data_idx, (wav_filename, trn_filename) in enumerate(zip(wav_fs, trn_fs)):
 			if data_limit is not None and len(dataset) > data_limit:
 				break
 			wav_id = re.sub(r"\..+$", "", wav_filename)
@@ -156,7 +156,7 @@ def load_audio_features_and_transcriptions(wav_paths, transcription_paths, bucke
 
 			sys.stdout.write("\r")
 			sys.stdout.write(stdout.CLEAR)
-			sys.stdout.write("loading {} ({}/{}) ... shape={}, rate={}, min={}".format(wav_filename, data_index + 1, len(wav_fs), audio.shape, sampling_rate, int(audio.size / sampling_rate / 60)))
+			sys.stdout.write("loading {} ({}/{}) ... shape={}, rate={}, min={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(audio.size / sampling_rate / 60)))
 			sys.stdout.flush()
 
 			# 転記の読み込み
@@ -214,8 +214,8 @@ def load_audio_features_and_transcriptions(wav_paths, transcription_paths, bucke
 					raise Exception(len(signal), len(char_id_sequence), num_points_per_character, rate, trn_filename, idx + 1)
 			
 				logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
-				bucket_index = get_bucket_index(logmel.shape[1])
-				if bucket_index < buckets_limit:
+				bucket_idx = get_bucket_idx(logmel.shape[1])
+				if bucket_idx < buckets_limit:
 					dataset.append((char_id_sequence, logmel, delta, delta_delta))
 					if len(char_id_sequence) > max_sentence_length:
 						max_sentence_length = len(char_id_sequence)
@@ -224,52 +224,73 @@ def load_audio_features_and_transcriptions(wav_paths, transcription_paths, bucke
 
 	return dataset, max_sentence_length, max_logmel_length
 
-def get_bucket_index(length):
+def get_bucket_idx(length):
 	return length // BUCKET_THRESHOLD
 
-def get_minutes(length):
+def get_duration_seconds(length):
 	config = chainer.config
 	return length * config.frame_shift
 
 def load_buckets(buckets_limit, data_limit):
+	assert buckets_limit > 0
+	assert data_limit > 0
+
 	wav_paths = [
 		"/home/stark/sandbox/CSJ/WAV/core",
 	]
-
 	transcription_paths = [
 		"/home/stark/sandbox/CSJ_/core",
 	]
-
 	data_cache_path = "/home/stark/sandbox/cache"
 
-	feature_filename = os.path.join(data_cache_path, "audio.npy")
-	feature_length_filename = os.path.join(data_cache_path, "audio.length.npy")
-	sentence_filename = os.path.join(data_cache_path, "sentence.npy")
-	sentence_length_filename = os.path.join(data_cache_path, "sentence.length.npy")
 	mean_filename = os.path.join(data_cache_path, "mean.npy")
 	std_filename = os.path.join(data_cache_path, "std.npy")	
 
 	mean_x_batch = None
 	stddev_x_batch = None
 
-	if os.path.isfile(feature_filename):
-		assert os.path.isfile(feature_length_filename)
-		assert os.path.isfile(sentence_filename)
-		assert os.path.isfile(sentence_length_filename)
-		assert os.path.isfile(mean_filename)
-		assert os.path.isfile(std_filename)
-		print("loading {} ...".format(feature_filename))
-		audio_batch = np.load(feature_filename)
-		print("loading {} ...".format(feature_length_filename))
-		audio_length_batch = np.load(feature_length_filename)
-		print("loading {} ...".format(sentence_filename))
-		sentence_batch = np.load(sentence_filename)
-		print("loading {} ...".format(sentence_length_filename))
-		sentence_length_batch = np.load(sentence_length_filename)
-		print("loading {} ...".format(mean_filename))
+	# キャッシュが存在するか調べる
+	cache_available = True
+	for bucket_idx in xrange(buckets_limit):
+		if os.path.isfile(os.path.join(data_cache_path, "feature_%d.npy" % bucket_idx)) == False:
+			cache_available = False
+			break
+		if os.path.isfile(os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx)) == False:
+			cache_available = False
+			break
+		if os.path.isfile(os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx)) == False:
+			cache_available = False
+			break
+		if os.path.isfile(os.path.join(data_cache_path, "sentence_length_%d.npy" % bucket_idx)) == False:
+			cache_available = False
+			break
+	if os.path.isfile(mean_filename) == False:
+		cache_available = False
+	if os.path.isfile(std_filename) == False:
+		cache_available = False
+
+	if cache_available:
+		print("loading dataset from cache ...")
+		
+		buckets_feature = []
+		buckets_feature_length = []
+		buckets_sentence = []
+		buckets_sentence_length = []
+
+		for bucket_idx in xrange(buckets_limit):
+			feature_batch = np.load(os.path.join(data_cache_path, "feature_%d.npy" % bucket_idx))
+			feature_length_batch = np.load(os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx))
+			sentence_batch = np.load(os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx))
+			sentence_length_batch = np.load(os.path.join(data_cache_path, "sentence_length_%d.npy" % bucket_idx))
+
+			buckets_feature.append(feature_batch)
+			buckets_feature_length.append(feature_length_batch)
+			buckets_sentence.append(sentence_batch)
+			buckets_sentence_length.append(sentence_length_batch)
+
 		mean_x_batch = np.load(mean_filename)
-		print("loading {} ...".format(std_filename))
 		stddev_x_batch = np.load(std_filename)
+
 	else:
 		dataset, max_sentence_length, max_logmel_length = load_audio_features_and_transcriptions(wav_paths, transcription_paths, buckets_limit, data_limit)
 
@@ -290,9 +311,9 @@ def load_buckets(buckets_limit, data_limit):
 			assert logmel.shape[1] == delta.shape[1]
 			assert delta.shape[1] == delta_delta.shape[1]
 			audio_length = logmel.shape[1]
-			bucket_index = get_bucket_index(audio_length)
-			if bucket_index > buckets_length:
-				buckets_length = bucket_index
+			bucket_idx = get_bucket_idx(audio_length)
+			if bucket_idx > buckets_length:
+				buckets_length = bucket_idx
 		buckets_length += 1
 		if buckets_limit is not None:
 			buckets_length = buckets_limit if buckets_length > buckets_limit else buckets_length
@@ -305,14 +326,14 @@ def load_buckets(buckets_limit, data_limit):
 			sentence, logmel, delta, delta_delta = data
 			feature_length = logmel.shape[1]
 			sentence_length = len(sentence)
-			bucket_index = get_bucket_index(feature_length)
-			if bucket_index >= buckets_length:
+			bucket_idx = get_bucket_idx(feature_length)
+			if bucket_idx >= buckets_length:
 				continue
 			valid_dataset_size += 1
-			max_feature_length_for_bucket[bucket_index] = BUCKET_THRESHOLD * (bucket_index + 1) - 1
-			assert feature_length <= max_feature_length_for_bucket[bucket_index]
-			if sentence_length > max_sentence_length_for_bucket[bucket_index]:
-				max_sentence_length_for_bucket[bucket_index] = sentence_length
+			max_feature_length_for_bucket[bucket_idx] = BUCKET_THRESHOLD * (bucket_idx + 1) - 1
+			assert feature_length <= max_feature_length_for_bucket[bucket_idx]
+			if sentence_length > max_sentence_length_for_bucket[bucket_idx]:
+				max_sentence_length_for_bucket[bucket_idx] = sentence_length
 
 		# データの平均と標準偏差
 		mean_x_batch = 0
@@ -327,14 +348,14 @@ def load_buckets(buckets_limit, data_limit):
 			sentence, logmel, delta, delta_delta = data
 			feature_length = logmel.shape[1]
 			sentence_length = len(sentence)
-			bucket_index = get_bucket_index(feature_length)
-			if bucket_index >= buckets_length:
+			bucket_idx = get_bucket_idx(feature_length)
+			if bucket_idx >= buckets_length:
 				continue
 
 			# 音響特徴量
-			feature_batch = buckets_feature[bucket_index]
+			feature_batch = buckets_feature[bucket_idx]
 			if feature_batch is None:
-				max_feature_length = max_feature_length_for_bucket[bucket_index]
+				max_feature_length = max_feature_length_for_bucket[bucket_idx]
 				feature_batch = np.zeros((3, config.num_mel_filters, max_feature_length), dtype=np.float32)
 				feature_batch[0, :, :feature_length] = logmel			
 				feature_batch[1, :, :feature_length] = delta			
@@ -354,12 +375,12 @@ def load_buckets(buckets_limit, data_limit):
 				# 平均と標準偏差を計算
 				mean_x_batch += np.mean(new_feature[:, :, :feature_length], axis=2, keepdims=True) / valid_dataset_size
 				stddev_x_batch += np.std(new_feature[:, :, :feature_length], axis=2, keepdims=True) / valid_dataset_size	
-			buckets_feature[bucket_index] = feature_batch
+			buckets_feature[bucket_idx] = feature_batch
 
 			# 書き起こし
-			sentence_batch = buckets_sentence[bucket_index]
+			sentence_batch = buckets_sentence[bucket_idx]
 			if sentence_batch is None:
-				max_sentence_length = max_sentence_length_for_bucket[bucket_index]
+				max_sentence_length = max_sentence_length_for_bucket[bucket_idx]
 				sentence_batch = np.zeros((max_sentence_length,), dtype=np.int32)
 				sentence_batch[:sentence_length] = sentence
 				# reshape
@@ -369,71 +390,45 @@ def load_buckets(buckets_limit, data_limit):
 				new_sentence[:sentence_length] = sentence
 				# バケツの後ろに結合
 				sentence_batch = np.concatenate((sentence_batch, new_sentence[None, ...]), axis=0)
-			buckets_sentence[bucket_index] = sentence_batch
+			buckets_sentence[bucket_idx] = sentence_batch
 
 			# 音響特徴量の有効長
-			feature_length_batch = buckets_feature_length[bucket_index]
+			feature_length_batch = buckets_feature_length[bucket_idx]
 			if feature_length_batch is None:
 				feature_length_batch = np.zeros((1,), dtype=np.int32)
 				feature_length_batch[0] = feature_length
 			else:
 				feature_length_batch = np.concatenate((feature_length_batch, [feature_length]), axis=0)
-			buckets_feature_length[bucket_index] = feature_length_batch
+			buckets_feature_length[bucket_idx] = feature_length_batch
 
 			# 書き起こしの有効長
-			sentence_length_batch = buckets_sentence_length[bucket_index]
+			sentence_length_batch = buckets_sentence_length[bucket_idx]
 			if sentence_length_batch is None:
 				sentence_length_batch = np.zeros((1,), dtype=np.int32)
 				sentence_length_batch[0] = sentence_length
 			else:
 				sentence_length_batch = np.concatenate((sentence_length_batch, [sentence_length]), axis=0)
-			buckets_sentence_length[bucket_index] = sentence_length_batch
+			buckets_sentence_length[bucket_idx] = sentence_length_batch
 
-		for bucket_index in xrange(buckets_length):
-			print(buckets_feature[bucket_index].shape, buckets_sentence[bucket_index].shape, get_minutes(buckets_feature[bucket_index].shape[3]))
+		for bucket_idx in xrange(buckets_length):
+			feature_batch = buckets_feature[bucket_idx]
+			sentence_batch = buckets_sentence[bucket_idx]
+			if feature_batch is None:
+				continue
+			if sentence_batch is None:
+				continue
+			print(bucket_idx, feature_batch.shape, sentence_batch.shape, get_duration_seconds(feature_batch.shape[3]))
 
 		# ディスクにキャッシュ
-		for bucket_index in xrange(buckets_length):
-			feature_batch = buckets_feature[bucket_index]
-			feature_length_batch = buckets_feature_length[bucket_index]
-			sentence_batch = buckets_sentence[bucket_index]
-			sentence_length_batch = buckets_sentence_length[bucket_index]
-			np.save(os.path.join(data_cache_path, "feature_%d.npy" % bucket_index), feature_batch)
-			np.save(os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_index), feature_length_batch)
-			np.save(os.path.join(data_cache_path, "sentence_%d.npy" % bucket_index), sentence_batch)
-			np.save(os.path.join(data_cache_path, "sentence_length_%d.npy" % bucket_index), sentence_length_batch)
-
-		print(buckets_length)
-		raise Exception()
-
-
-		audio_batch = np.zeros((len(dataset), 3, config.num_mel_filters, max_logmel_length), dtype=np.float32)
-		audio_length_batch = np.zeros((len(dataset),), dtype=np.int32)
-		sentence_batch = np.zeros((len(dataset), max_sentence_length), dtype=np.int32)
-		sentence_length_batch = np.zeros((len(dataset),), dtype=np.int32)
-
-
-		for idx, data in enumerate(dataset):
-			sentence, logmel, delta, delta_delta = data
-			assert logmel.shape[1] == delta.shape[1]
-			assert delta.shape[1] == delta_delta.shape[1]
-			audio_length = logmel.shape[1]
-			# cache audio features
-			audio_batch[idx, 0, :, :audio_length] = logmel
-			audio_batch[idx, 1, :, :audio_length] = delta
-			audio_batch[idx, 2, :, :audio_length] = delta_delta
-			audio_length_batch[idx] = audio_length
-			# cache character ids
-			sentence_batch[idx, :len(sentence)] = sentence
-			sentence_length_batch[idx] = len(sentence)
-			# 平均と標準偏差を計算
-			mean_x_batch += np.mean(audio_batch[idx, :, :, :audio_length], axis=2, keepdims=True) / len(dataset)
-			stddev_x_batch += np.std(audio_batch[idx, :, :, :audio_length], axis=2, keepdims=True) / len(dataset)
-
-		np.save(feature_filename, audio_batch)
-		np.save(feature_length_filename, audio_length_batch)
-		np.save(sentence_filename, sentence_batch)
-		np.save(sentence_length_filename, sentence_length_batch)
+		for bucket_idx in xrange(buckets_length):
+			feature_batch = buckets_feature[bucket_idx]
+			feature_length_batch = buckets_feature_length[bucket_idx]
+			sentence_batch = buckets_sentence[bucket_idx]
+			sentence_length_batch = buckets_sentence_length[bucket_idx]
+			np.save(os.path.join(data_cache_path, "feature_%d.npy" % bucket_idx), feature_batch)
+			np.save(os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx), feature_length_batch)
+			np.save(os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx), sentence_batch)
+			np.save(os.path.join(data_cache_path, "sentence_length_%d.npy" % bucket_idx), sentence_length_batch)
 		np.save(mean_filename, mean_x_batch)
 		np.save(std_filename, stddev_x_batch)
 
@@ -441,4 +436,4 @@ def load_buckets(buckets_limit, data_limit):
 	mean_x_batch = mean_x_batch[None, ...]
 	stddev_x_batch = stddev_x_batch[None, ...]
 
-	return audio_batch, audio_length_batch, sentence_batch, sentence_length_batch, mean_x_batch, stddev_x_batch
+	return buckets_feature, buckets_feature_length, buckets_sentence, buckets_sentence_length, mean_x_batch, stddev_x_batch
