@@ -8,7 +8,7 @@ import numpy as np
 import chainer.functions as F
 from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
-from dataset import load_audio_and_transcription, get_minibatch, get_vocab
+from dataset import get_minibatch, get_vocab, load_buckets
 from model import AcousticModel, load_model, save_model, build_model
 from ctc import connectionist_temporal_classification
 
@@ -24,7 +24,7 @@ def print_bold(str):
 
 # バケットのインデックスを計算
 def get_bucket_index(signal):
-	return len(signal) // 512 // 16
+	return len(signal) // 16
 
 def get_current_learning_rate(opt):
 	if isinstance(opt, optimizers.NesterovAG):
@@ -143,14 +143,6 @@ def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stdd
 	return errors
 
 def main():
-	wav_paths = [
-		"/home/aibo/sandbox/CSJ/WAV/core/",
-	]
-
-	transcription_paths = [
-		"/home/aibo/sandbox/CSJ_/core/",
-	]
-
 	sampling_rate = 16000
 	frame_width = 0.032		# 秒
 	frame_shift = 0.01		# 秒
@@ -167,11 +159,12 @@ def main():
 	chainer.global_config.using_delta = True
 	chainer.global_config.using_delta_delta = True
 
-	pair = load_audio_and_transcription(wav_paths, transcription_paths)
+	# データの読み込み
+	feature_batch, feature_length_batch, sentence_batch, sentence_length_batch, mean_x_batch, stddev_x_batch = load_buckets(args.buckets_limit, args.data_limit)
 	vocab, vocab_inv, BLANK = get_vocab()
 	vocab_size = len(vocab)
 	print_bold("data	#")
-	print("wav	{}".format(len(pair)))
+	print("audio	{}".format(len(feature_batch)))
 	print("vocab	{}".format(len(vocab)))
 
 	# ミニバッチサイズ
@@ -179,9 +172,28 @@ def main():
 
 	dataset = []
 	max_bucket_index = 0	# バケットの最大個数
+	for data_idx in xrange(len(feature_batch)):
+		feature_length = feature_length_batch[data_idx]
+		feature = feature_batch[data_idx, :, :, :feature_length]
+		sentence_length = sentence_length_batch[data_idx]
+		sentence = sentence_batch[data_idx, :sentence_length]
+		dataset.append((sentence, feature))
+		bucket_idx = get_bucket_index(feature)
+		if bucket_idx > max_bucket_index:
+			max_bucket_index = bucket_idx
+
+	del feature_batch
+	del feature_length_batch
+	del sentence_batch
+	del sentence_length_batch
+
+	raise Exception()
+
+
+	dataset = []
+	max_bucket_index = 0	# バケットの最大個数
 	for signal, sentence in pair:
 		# 転記、対数メルフィルタバンク出力、Δ、ΔΔの順で並べる
-		# データが多いことが想定されるので遅延読み込み
 		dataset.append((signal, sentence, None, None, None))
 		bucket_idx = get_bucket_index(signal)
 		if bucket_idx > max_bucket_index:
@@ -206,7 +218,7 @@ def main():
 			continue
 		if len(bucket) < batchsize:	# ミニバッチサイズより少ない場合はスキップ
 			continue
-		if args.buckets_slice is not None and idx > args.buckets_slice:
+		if args.buckets_limit is not None and idx > args.buckets_limit:
 			continue
 
 		# split into train and dev
@@ -397,11 +409,13 @@ if __name__ == "__main__":
 	
 	parser.add_argument("--gpu-device", "-g", type=int, default=0) 
 	parser.add_argument("--interval", type=int, default=100)
-	parser.add_argument("--buckets-slice", type=int, default=None)
 	parser.add_argument("--model-dir", "-m", type=str, default="model")
 	parser.add_argument("--dev-split", "-split", type=float, default=0.05)
 	parser.add_argument("--train-filename", "-train", default=None)
 	parser.add_argument("--dev-filename", "-dev", default=None)
+
+	parser.add_argument("--buckets-limit", type=int, default=None)
+	parser.add_argument("--data-limit", type=int, default=None)
 	args = parser.parse_args()
 
 	main()

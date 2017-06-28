@@ -9,7 +9,6 @@ from chainer import utils
 from chainer.utils import type_check
 from chainer import variable
 
-
 def _logsumexp(a, xp, axis=None):
 	vmax = xp.amax(a, axis=axis, keepdims=True)
 	vmax += xp.log(xp.sum(xp.exp(a - vmax), axis=axis, keepdims=True, dtype=a.dtype))
