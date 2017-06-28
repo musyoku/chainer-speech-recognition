@@ -94,6 +94,8 @@ def compute_error(buckets, batchsizes, model, dataset, BLANK, mean_x_batch, stdd
 	errors = []
 	xp = model.xp
 	for bucket_idx, (bucket, batchsize) in enumerate(zip(buckets, batchsizes)):
+		if len(bucket) < batchsize:
+			continue
 		total_iterations = 1 if approximate else int(math.ceil(len(bucket) / batchsize))
 		sum_error = 0
 		for itr in xrange(1, total_iterations + 1):
