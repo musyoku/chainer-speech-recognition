@@ -13,6 +13,11 @@ def plot_features(out_dir, signal, logmel, delta, delta_delta, sampling_rate, fi
 	except:
 		pass
 
+	print(signal.shape)
+	print(logmel.shape)
+	print(delta.shape)
+	print(delta_delta.shape)
+
 	sampling_interval = 1.0 / sampling_rate
 	times = np.arange(len(signal)) * sampling_interval
 	pylab.clf()

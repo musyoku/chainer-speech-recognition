@@ -234,12 +234,12 @@ def load_buckets(buckets_limit, data_limit):
 		assert data_limit > 0
 
 	wav_paths = [
-		"/home/stark/sandbox/CSJ/WAV/core",
+		"/home/aibo/sandbox/CSJ/WAV/core",
 	]
 	transcription_paths = [
-		"/home/stark/sandbox/CSJ_/core",
+		"/home/aibo/sandbox/CSJ_/core",
 	]
-	data_cache_path = "/home/stark/sandbox/cache"
+	data_cache_path = "/home/aibo/sandbox/cache"
 
 	mean_filename = os.path.join(data_cache_path, "mean.npy")
 	std_filename = os.path.join(data_cache_path, "std.npy")	
@@ -357,6 +357,7 @@ def load_buckets(buckets_limit, data_limit):
 				sys.stdout.flush()
 
 			sentence, logmel, delta, delta_delta = data
+			print(logmel.shape)
 			feature_length = logmel.shape[1]
 			sentence_length = len(sentence)
 			bucket_idx = get_bucket_idx(feature_length)
@@ -387,6 +388,10 @@ def load_buckets(buckets_limit, data_limit):
 			feature_batch = buckets_feature[bucket_idx]
 			feature_length_batch = buckets_feature_length[bucket_idx]
 			sentence_batch = buckets_sentence[bucket_idx]
+
+			# feature_batchは逆順になっているので注意
+			feature_length_batch.reverse()
+			sentence_batch.reverse()
 
 			np.save(os.path.join(data_cache_path, "feature_%d.npy" % bucket_idx), feature_batch)
 			with open (os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx), "wb") as f:

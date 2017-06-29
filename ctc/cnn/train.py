@@ -167,7 +167,7 @@ def main():
 	_buckets_feature, _buckets_feature_length, _buckets_sentence, mean_x_batch, stddev_x_batch = load_buckets(args.buckets_limit, args.data_limit)
 
 	# ミニバッチを取れないものは除外
-	batchsizes = [64, 32, 32, 32, 32, 24, 24, 24, 16, 16, 16, 4, 4, 4, 4, 4, 4, 4, 4]
+	batchsizes = [120, 80, 50, 32, 32, 24, 24, 24, 16, 16, 16, 4, 4, 4, 4, 4, 4, 4, 4]
 	batchsizes = batchsizes[:len(_buckets_feature)]
 
 	buckets_feature = []
