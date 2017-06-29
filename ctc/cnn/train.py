@@ -9,7 +9,7 @@ import chainer.functions as F
 from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
 from dataset import get_minibatch, get_vocab, load_buckets, get_duration_seconds
-from model import load_model, save_model, build_model, ZhangModel
+from model import load_model, save_model, build_model
 from ctc import connectionist_temporal_classification
 
 class stdout:
@@ -167,7 +167,11 @@ def main():
 	_buckets_feature, _buckets_feature_length, _buckets_sentence, mean_x_batch, stddev_x_batch = load_buckets(args.buckets_limit, args.data_limit)
 
 	# ミニバッチを取れないものは除外
-	batchsizes = [64, 64, 32, 32, 32, 24, 24, 24, 16, 16, 16, 4, 4, 4, 4, 4, 4, 4, 4]
+	# for single GTX 1080
+	if args.architecture.startswith("zhang"):
+		batchsizes = [192, 128, 96, 64, 48, 32, 32, 32, 24, 24, 24, 16, 16, 16, 16, 16, 16, 16, 16]
+	else:
+		batchsizes = [256, 192, 192, 128, 96, 96, 80, 64, 64, 48, 48, 32, 32, 32, 32, 16, 16, 16, 16]
 	batchsizes = batchsizes[:len(_buckets_feature)]
 
 	buckets_feature = []
@@ -187,7 +191,7 @@ def main():
 		buckets_sentence.append(_buckets_sentence[bucket_idx])
 		buckets_batchsize.append(batchsize)
 		dataset_size += len(buckets_feature[-1])
-	
+
 	buckets_size = len(buckets_feature)
 	vocab, vocab_inv, BLANK = get_vocab()
 	vocab_size = len(vocab)
@@ -219,9 +223,8 @@ def main():
 
 	# バケットごとのデータ量の差を学習回数によって補正する
 	# データが多いバケットほど多くの学習（ミニバッチのサンプリング）を行う
-	batchsizes = batchsizes[:len(buckets_indices_train)]
 	required_interations = []
-	for bucket, batchsize in zip(buckets_indices_train, batchsizes):
+	for bucket, batchsize in zip(buckets_indices_train, buckets_batchsize):
 		itr = int(math.ceil(len(bucket) / batchsize))
 		required_interations.append(itr)
 	total_iterations_train = sum(required_interations)
@@ -244,22 +247,6 @@ def main():
 		model = build_model(vocab_size=vocab_size, ndim_audio_features=config.ndim_audio_features, ndim_h=config.ndim_h, ndim_dense=config.ndim_dense,
 		 kernel_size=(3, 5), dropout=config.dropout, weightnorm=config.weightnorm, wgain=config.wgain,
 		 num_mel_filters=config.num_mel_filters, architecture=config.architecture)
-
-
-
-
-
-
-	# model = ZhangModel(vocab_size, 4, 3, 3, 128, ndim_fc=320, nonlinearity="relu", kernel_size=(3, 5), dropout=0, layernorm=True, weightnorm=False, residual=True, wgain=1, num_mel_filters=40)
-
-
-
-
-
-
-
-
-
 
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
