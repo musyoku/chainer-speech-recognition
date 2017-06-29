@@ -295,6 +295,7 @@ class Stream(chainer.Chain):
 					for _index, _layer in enumerate(layer.layers):
 						if isinstance(_layer, chainer.Link):
 							setattr(self, "layer_{}_{}".format(index, _index), _layer)
+							
 		self.layers += layers
 
 	def __call__(self, x):

@@ -9,7 +9,7 @@ import chainer.functions as F
 from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
 from dataset import get_minibatch, get_vocab, load_buckets, get_duration_seconds
-from model import AcousticModel, load_model, save_model, build_model
+from model import load_model, save_model, build_model, ZhangModel
 from ctc import connectionist_temporal_classification
 
 class stdout:
@@ -148,8 +148,8 @@ def compute_error(model, buckets_indices, buckets_feature, buckets_feature_lengt
 
 def main():
 	sampling_rate = 16000
-	frame_width = 0.032		# 秒
-	frame_shift = 0.01		# 秒
+	frame_width = 0.032		# sec
+	frame_shift = 0.01		# sec
 	gpu_ids = [0, 1, 3]		# 複数GPUを使う場合
 	num_fft = int(sampling_rate * frame_width)
 	num_mel_filters = 40
@@ -167,7 +167,7 @@ def main():
 	_buckets_feature, _buckets_feature_length, _buckets_sentence, mean_x_batch, stddev_x_batch = load_buckets(args.buckets_limit, args.data_limit)
 
 	# ミニバッチを取れないものは除外
-	batchsizes = [120, 80, 50, 32, 32, 24, 24, 24, 16, 16, 16, 4, 4, 4, 4, 4, 4, 4, 4]
+	batchsizes = [64, 64, 32, 32, 32, 24, 24, 24, 16, 16, 16, 4, 4, 4, 4, 4, 4, 4, 4]
 	batchsizes = batchsizes[:len(_buckets_feature)]
 
 	buckets_feature = []
@@ -244,6 +244,23 @@ def main():
 		model = build_model(vocab_size=vocab_size, ndim_audio_features=config.ndim_audio_features, ndim_h=config.ndim_h, ndim_dense=config.ndim_dense,
 		 kernel_size=(3, 5), dropout=config.dropout, weightnorm=config.weightnorm, wgain=config.wgain,
 		 num_mel_filters=config.num_mel_filters, architecture=config.architecture)
+
+
+
+
+
+
+	# model = ZhangModel(vocab_size, 4, 3, 3, 128, ndim_fc=320, nonlinearity="relu", kernel_size=(3, 5), dropout=0, layernorm=True, weightnorm=False, residual=True, wgain=1, num_mel_filters=40)
+
+
+
+
+
+
+
+
+
+
 	if args.gpu_device >= 0:
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu(args.gpu_device)
@@ -316,7 +333,7 @@ def main():
 
 		# ログ
 		elapsed_time = time.time() - start_time
-		print("Epoch {} done in {} min".format(epoch, int(elapsed_time / 60)))
+		print("Epoch {} done in {} min - total {} min".format(epoch, int(elapsed_time / 60), int(total_time / 60)))
 		sys.stdout.write(stdout.CLEAR)
 		print("	loss:", sum_loss / total_iterations_train)
 		print("	CER (train):	", train_error)

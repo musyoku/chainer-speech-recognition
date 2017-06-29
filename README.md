@@ -7,12 +7,13 @@ TODO:
 - [ ] 声道長歪み
 - [ ] 話速歪み
 - [ ] ランダム歪み
-^ [ ] 大規模データの読み出し
+- [ ] 大規模データの読み出し
 
 Tools:
 - [CSJ音声コーパスの前処理ツール](https://github.com/musyoku/csj-preprocesser)
 
 References:
+- [形態素解析も辞書も言語モデルもいらないend-to-end音声認識](https://www.slideshare.net/t_koshikawa/endtoend)
 - [『日本語話し言葉コーパス』を用いた音声認識の進展](http://sap.ist.i.kyoto-u.ac.jp/lab/bib/report/KAW-orc04.pdf)
 - [Deep Neural Networkに基づく日本語音声認識の基礎評価](https://ipsj.ixsq.nii.ac.jp/ej/?action=repository_uri&item_id=94549&file_id=1&file_no=1)
 - [Very Deep Convolutional Networks for Large-Scale Image Recognition](https://arxiv.org/abs/1409.1556)

@@ -91,8 +91,7 @@ def get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_
 			t_length = len(sentence)
 
 		# t
-		for pos, char_id in enumerate(sentence):
-			t_batch[batch_idx, pos] = char_id
+		t_batch[batch_idx, :t_length] = sentence
 		t_valid_length.append(t_length)
 
 	return x_batch, x_valid_length, t_batch, t_valid_length
@@ -357,7 +356,6 @@ def load_buckets(buckets_limit, data_limit):
 				sys.stdout.flush()
 
 			sentence, logmel, delta, delta_delta = data
-			print(logmel.shape)
 			feature_length = logmel.shape[1]
 			sentence_length = len(sentence)
 			bucket_idx = get_bucket_idx(feature_length)

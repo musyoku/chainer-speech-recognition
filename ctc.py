@@ -17,13 +17,13 @@ def _logsumexp(a, xp, axis=None):
 def _softmax(x, xp):
 	val = xp.exp(x - xp.amax(x, axis=2, keepdims=True))
 	val /= xp.sum(val, axis=2, keepdims=True)
-	return xp.clip(val + 1e-4, 0, 1)
+	return val
+	return xp.clip(val + 1e-8, 0, 1)
 
 def _label_to_path(labels, blank_symbol, xp):
 	path = xp.full((len(labels), labels.shape[1] * 2 + 1), blank_symbol, dtype=numpy.int32)
 	path[:, 1::2] = labels
 	return path
-
 
 def _log_dot(prob, rr, xp):
 	# print("_log_dot:")

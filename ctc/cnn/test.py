@@ -5,8 +5,8 @@ import chainer, argparse, math, cupy, sys, os, time
 import numpy as np
 from chainer import optimizers, cuda, serializers
 from chainer import functions as F
-from model import ZhangModel
 sys.path.append("../../")
+from model import AcousticModel, load_model, save_model, build_model
 from ctc import connectionist_temporal_classification
 
 BLANK = 0
@@ -74,7 +74,8 @@ def main():
 	# np.set_printoptions(precision=3, suppress=True)
 
 	model_filename = "model.hdf5"
-	model = ZhangModel(args.vocab_size, args.num_conv_layers, args.num_fc_layers, 3, args.ndim_h, dropout=args.dropout, layernorm=args.layernorm, weightnorm=args.weightnorm)
+	model = build_model(vocab_size=args.vocab_size, ndim_h=args.ndim_h, ndim_dense=320,
+		 kernel_size=(3, 5), dropout=args.dropout, weightnorm=args.weightnorm, architecture=args.architecture)
 	if os.path.isfile(model_filename):
 		print("loading {} ...".format(model_filename))
 		serializers.load_hdf5(model_filename, model)
@@ -200,5 +201,6 @@ if __name__ == "__main__":
 	parser.add_argument("--weightnorm", "-weightnorm", default=False, action="store_true")
 	parser.add_argument("--layernorm", "-layernorm", default=False, action="store_true")
 	parser.add_argument("--residual", "-residual", default=False, action="store_true")
+	parser.add_argument("--architecture", "-arch", type=str, default="zhang")
 	args = parser.parse_args()
 	main()
