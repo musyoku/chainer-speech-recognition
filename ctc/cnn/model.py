@@ -169,42 +169,16 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 			nn.MaxPooling2D(ksize=(3, 1)),
 		)
 		# conv layers
-		model.layer(
-			nn.Residual(
-				nn.LayerNormalization(None),
-				nn.ReLU(),
-				nn.Dropout(dropout),
-				nn.Convolution2D(ndim_h, ndim_h, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
-				lambda x: x[..., :-pad],
+		for _ in xrange(num_conv_layers):
+			model.layer(
+				nn.Residual(
+					nn.LayerNormalization(None),
+					nn.ReLU(),
+					nn.Dropout(dropout),
+					nn.Convolution2D(ndim_h, ndim_h, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+					lambda x: x[..., :-pad],
+				)
 			)
-		)
-		model.layer(
-			nn.Residual(
-				nn.LayerNormalization(None),
-				nn.ReLU(),
-				nn.Dropout(dropout),
-				nn.Convolution2D(ndim_h, ndim_h, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
-				lambda x: x[..., :-pad],
-			)
-		)
-		model.layer(
-			nn.Residual(
-				nn.LayerNormalization(None),
-				nn.ReLU(),
-				nn.Dropout(dropout),
-				nn.Convolution2D(ndim_h, ndim_h, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
-				lambda x: x[..., :-pad],
-			)
-		)
-		model.layer(
-			nn.Residual(
-				nn.LayerNormalization(None),
-				nn.ReLU(),
-				nn.Dropout(dropout),
-				nn.Convolution2D(ndim_h, ndim_h, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
-				lambda x: x[..., :-pad],
-			)
-		)
 		# dense layers
 		model.layer(
 			nn.Convolution2D(ndim_h, ndim_dense, ksize=(kernel_height, 1), stride=1, pad=0, weightnorm=weightnorm),
