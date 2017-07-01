@@ -188,9 +188,9 @@ def main():
 	# ミニバッチを取れないものは除外
 	# for single GTX 1080
 	if args.architecture.startswith("zhang"):
-		batchsizes = [192, 128, 96, 64, 48, 32, 32, 32, 24, 24, 24, 16, 16, 16, 12, 12, 12, 12, 12]
+		batchsizes = [96, 96, 96, 64, 48, 32, 32, 32, 24, 24, 24, 16, 16, 16, 12, 12, 12, 12, 12]
 	else:
-		batchsizes = [256, 192, 160, 128, 96, 80, 64, 64, 48, 48, 48, 32, 32, 32, 32, 16, 16, 12, 12]
+		batchsizes = [96, 96, 96, 96, 96, 80, 64, 64, 48, 48, 48, 32, 32, 32, 32, 16, 16, 12, 12]
 	batchsizes = batchsizes[:len(_buckets_feature)]
 
 	buckets_feature = []
@@ -259,6 +259,7 @@ def main():
 	chainer.global_config.ndim_audio_features = args.ndim_audio_features
 	chainer.global_config.ndim_h = args.ndim_h
 	chainer.global_config.ndim_dense = args.ndim_dense
+	chainer.global_config.num_conv_layers = args.num_conv_layers
 	chainer.global_config.kernel_size = (3, 5)
 	chainer.global_config.dropout = args.dropout
 	chainer.global_config.weightnorm = args.weightnorm
@@ -268,7 +269,8 @@ def main():
 	model = load_model(args.model_dir)
 	if model is None:
 		config = chainer.config
-		model = build_model(vocab_size=vocab_size, ndim_audio_features=config.ndim_audio_features, ndim_h=config.ndim_h, ndim_dense=config.ndim_dense,
+		model = build_model(vocab_size=vocab_size, ndim_audio_features=config.ndim_audio_features, 
+		 ndim_h=config.ndim_h, ndim_dense=config.ndim_dense, num_conv_layers=config.num_conv_layers,
 		 kernel_size=(3, 5), dropout=config.dropout, weightnorm=config.weightnorm, wgain=config.wgain,
 		 num_mel_filters=config.num_mel_filters, architecture=config.architecture)
 
@@ -288,6 +290,7 @@ def main():
 	for epoch in xrange(1, args.total_epoch + 1):
 		print_bold("Epoch %d" % epoch)
 		start_time = time.time()
+		loss_value = 0
 		sum_loss = 0
 		
 		with chainer.using_config("train", True):
@@ -372,6 +375,8 @@ if __name__ == "__main__":
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
 	parser.add_argument("--ndim-h", "-dh", type=int, default=320)
 	parser.add_argument("--ndim-dense", "-dd", type=int, default=1024)
+	parser.add_argument("--num-conv-layers", "-nconv", type=int, default=4)
+	parser.add_argument("--num-dense-layers", "-ndense", type=int, default=4)
 	parser.add_argument("--wgain", "-w", type=float, default=1)
 
 	parser.add_argument("--nonlinear", type=str, default="relu")

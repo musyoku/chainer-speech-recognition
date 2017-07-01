@@ -233,12 +233,12 @@ def load_buckets(buckets_limit, data_limit):
 		assert data_limit > 0
 
 	wav_paths = [
-		"/home/aibo/sandbox/CSJ/WAV/core",
+		"/home/stark/sandbox/CSJ/WAV/core",
 	]
 	transcription_paths = [
-		"/home/aibo/sandbox/CSJ_/core",
+		"/home/stark/sandbox/CSJ_/core",
 	]
-	data_cache_path = "/home/aibo/sandbox/cache"
+	data_cache_path = "/home/stark/sandbox/cache"
 
 	mean_filename = os.path.join(data_cache_path, "mean.npy")
 	std_filename = os.path.join(data_cache_path, "std.npy")	
