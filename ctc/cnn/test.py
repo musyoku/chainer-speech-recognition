@@ -6,6 +6,7 @@ import numpy as np
 from chainer import optimizers, cuda, serializers
 from chainer import functions as F
 sys.path.append("../../")
+from train import get_optimizer, get_current_learning_rate
 from model import AcousticModel, load_model, save_model, build_model
 from ctc import connectionist_temporal_classification
 
@@ -90,7 +91,7 @@ def main():
 	xp = model.xp
 
 	# optimizer
-	optimizer = optimizers.Adam(args.learning_rate, 0.9)
+	optimizer = get_optimizer(args.optimizer, args.learning_rate, args.momentum)
 	optimizer.setup(model)
 	optimizer.add_hook(chainer.optimizer.GradientClipping(1))
 	
@@ -117,6 +118,7 @@ def main():
 					t_batch = cuda.to_gpu(t_batch.astype(xp.int32))
 					x_length_batch = cuda.to_gpu(x_length_batch.astype(xp.int32))
 					t_length_batch = cuda.to_gpu(t_length_batch.astype(xp.int32))
+
 
 				# t_batch[0, 1] = 2
 				# if t_length_batch.size == 4:
@@ -179,7 +181,7 @@ def main():
 				print("true:", target_sequence, "pred:", pred_seqence)
 				error = compute_character_error_rate(target_sequence, pred_seqence)
 				average_error += error
-			print("CER: {} - loss: {} - lr: {:.4e}".format(int(average_error / args.batchsize * 100), sum_loss / total_loop, optimizer.alpha))
+			print("CER: {} - loss: {} - lr: {:.4e}".format(int(average_error / args.batchsize * 100), sum_loss / total_loop, get_current_learning_rate(optimizer)))
 
 		print("elapsed:", time.time() - start_time)
 
@@ -187,7 +189,6 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--total-epoch", "-epoch", type=int, default=100)
 	parser.add_argument("--batchsize", "-b", type=int, default=32)
-	parser.add_argument("--learning-rate", "-lr", type=float, default=0.001)
 	parser.add_argument("--vocab-size", "-vocab", type=int, default=83)
 	parser.add_argument("--num-conv-layers", "-conv", type=int, default=1)
 	parser.add_argument("--num-fc-layers", "-fc", type=int, default=1)
@@ -201,6 +202,9 @@ if __name__ == "__main__":
 	parser.add_argument("--weightnorm", "-weightnorm", default=False, action="store_true")
 	parser.add_argument("--layernorm", "-layernorm", default=False, action="store_true")
 	parser.add_argument("--residual", "-residual", default=False, action="store_true")
-	parser.add_argument("--architecture", "-arch", type=str, default="zhang")
+	parser.add_argument("--architecture", "-arch", type=str, default="zhang+layernorm")
+	parser.add_argument("--optimizer", "-opt", type=str, default="adam")
+	parser.add_argument("--learning-rate", "-lr", type=float, default=0.001)
+	parser.add_argument("--momentum", "-mo", type=float, default=0.9)
 	args = parser.parse_args()
 	main()

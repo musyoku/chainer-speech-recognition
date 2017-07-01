@@ -25,11 +25,19 @@ def print_bold(str):
 def get_current_learning_rate(opt):
 	if isinstance(opt, optimizers.NesterovAG):
 		return opt.lr
+	if isinstance(opt, optimizers.MomentumSGD):
+		return opt.lr
+	if isinstance(opt, optimizers.SGD):
+		return opt.lr
 	if isinstance(opt, optimizers.Adam):
 		return opt.alpha
 	raise NotImplementationError()
 
 def get_optimizer(name, lr, momentum):
+	if name == "sgd":
+		return optimizers.SGD(lr=lr)
+	if name == "msgd":
+		return optimizers.MomentumSGD(lr=lr, momentum=momentum)
 	if name == "nesterov":
 		return optimizers.NesterovAG(lr=lr, momentum=momentum)
 	if name == "adam":
@@ -43,6 +51,11 @@ def decay_learning_rate(opt, factor, final_value):
 		opt.lr *= factor
 		return
 	if isinstance(opt, optimizers.SGD):
+		if opt.lr <= final_value:
+			return
+		opt.lr *= factor
+		return
+	if isinstance(opt, optimizers.MomentumSGD):
 		if opt.lr <= final_value:
 			return
 		opt.lr *= factor
@@ -85,6 +98,12 @@ def decay_learning_rate(opt, factor, final_value):
 		opt.alpha *= factor
 		return
 	raise NotImplementationError()
+
+def formatted_error(error_values):
+	errors = []
+	for error in error_values:
+		errors.append("%.2f" % error)
+	return errors
 
 def compute_error(model, buckets_indices, buckets_feature, buckets_feature_length, buckets_sentence, buckets_batchsize, BLANK, mean_x_batch, stddev_x_batch, approximate=True):
 	errors = []
@@ -169,9 +188,9 @@ def main():
 	# ミニバッチを取れないものは除外
 	# for single GTX 1080
 	if args.architecture.startswith("zhang"):
-		batchsizes = [192, 128, 96, 64, 48, 32, 32, 32, 24, 24, 24, 16, 16, 16, 16, 16, 16, 16, 16]
+		batchsizes = [192, 128, 96, 64, 48, 32, 32, 32, 24, 24, 24, 16, 16, 16, 12, 12, 12, 12, 12]
 	else:
-		batchsizes = [256, 192, 192, 128, 96, 96, 80, 64, 64, 48, 48, 32, 32, 32, 32, 16, 16, 16, 16]
+		batchsizes = [256, 192, 160, 128, 96, 80, 64, 64, 48, 48, 48, 32, 32, 32, 32, 16, 16, 12, 12]
 	batchsizes = batchsizes[:len(_buckets_feature)]
 
 	buckets_feature = []
@@ -191,6 +210,11 @@ def main():
 		buckets_sentence.append(_buckets_sentence[bucket_idx])
 		buckets_batchsize.append(batchsize)
 		dataset_size += len(buckets_feature[-1])
+
+	# buckets_feature = [buckets_feature[13]]
+	# buckets_feature_length = [buckets_feature_length[13]]
+	# buckets_sentence = [buckets_sentence[13]]
+	# buckets_batchsize = [buckets_batchsize[13]]
 
 	buckets_size = len(buckets_feature)
 	vocab, vocab_inv, BLANK = get_vocab()
@@ -268,38 +292,42 @@ def main():
 		
 		with chainer.using_config("train", True):
 			for itr in xrange(1, total_iterations_train + 1):
-				bucket_idx = int(np.random.choice(np.arange(len(buckets_indices_train)), size=1, p=buckets_distribution))
-				data_indices = buckets_indices_train[bucket_idx]
-				batchsize = buckets_batchsize[bucket_idx]
-				np.random.shuffle(data_indices)
+				try:
+					bucket_idx = int(np.random.choice(np.arange(len(buckets_indices_train)), size=1, p=buckets_distribution))
+					data_indices = buckets_indices_train[bucket_idx]
+					batchsize = buckets_batchsize[bucket_idx]
+					np.random.shuffle(data_indices)
 
-				feature_bucket = buckets_feature[bucket_idx]
-				feature_length_bucket = buckets_feature_length[bucket_idx]
-				sentence_bucket = buckets_sentence[bucket_idx]
+					feature_bucket = buckets_feature[bucket_idx]
+					feature_length_bucket = buckets_feature_length[bucket_idx]
+					sentence_bucket = buckets_sentence[bucket_idx]
 
-				x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, BLANK)
+					x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, BLANK)
 
-				# 正規化
-				x_batch = (x_batch - mean_x_batch) / stddev_x_batch
+					# 正規化
+					x_batch = (x_batch - mean_x_batch) / stddev_x_batch
 
-				# GPU
-				if xp is cupy:
-					x_batch = cuda.to_gpu(x_batch.astype(np.float32))
-					t_batch = cuda.to_gpu(t_batch.astype(np.int32))
-					x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
-					t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
+					# GPU
+					if xp is cupy:
+						x_batch = cuda.to_gpu(x_batch.astype(np.float32))
+						t_batch = cuda.to_gpu(t_batch.astype(np.int32))
+						x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
+						t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
-				# 誤差の計算
-				y_batch = model(x_batch)	# list of variables
-				loss = connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
+					# 誤差の計算
+					y_batch = model(x_batch)	# list of variables
+					loss = connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
 
-				# NaN
-				loss_value = float(loss.data)
-				if loss_value == loss_value:
+					# NaN
+					loss_value = float(loss.data)
+					if loss_value != loss_value:
+						raise Exception("Encountered NaN when computing loss.")
+
 					# 更新
 					optimizer.update(lossfun=lambda: loss)
-				else:
-					print("Encountered NaN when computing loss.")
+
+				except Exception as e:
+					print(" ", bucket_idx,  e.message)
 
 				sum_loss += loss_value
 				sys.stdout.write("\r" + stdout.CLEAR)
@@ -320,13 +348,13 @@ def main():
 
 		# ログ
 		elapsed_time = time.time() - start_time
+		total_time += elapsed_time
 		print("Epoch {} done in {} min - total {} min".format(epoch, int(elapsed_time / 60), int(total_time / 60)))
 		sys.stdout.write(stdout.CLEAR)
 		print("	loss:", sum_loss / total_iterations_train)
-		print("	CER (train):	", train_error)
-		print("	CER (dev):	", dev_error)
+		print("	CER (train):	{:.2f}	{}".format(sum(train_error) / len(train_error) , formatted_error(train_error)))
+		print("	CER (dev):	{:.2f}	{}".format(sum(dev_error) / len(dev_error) , formatted_error(dev_error)))
 		print("	lr: {}".format(get_current_learning_rate(optimizer)))
-		total_time += elapsed_time
 
 		# 学習率の減衰
 		decay_learning_rate(optimizer, args.lr_decay, final_learning_rate)
