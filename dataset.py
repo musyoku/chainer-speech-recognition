@@ -438,7 +438,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			while len(buckets_file_indices) <= bucket_idx:
 				buckets_file_indices.append(0)
 		# check
-		if len(buckets_signal[bucket_idx]) > num_signals_per_file:
+		if len(buckets_signal[bucket_idx]) >= num_signals_per_file:
 			return True, bucket_idx
 		return False, bucket_idx
 
@@ -446,9 +446,9 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		if buckets_limit is not None and bucket_idx > buckets_limit:
 			return False
 		file_index = buckets_file_indices[bucket_idx]
-		with open (os.path.join(cache_path, "signal", "signal_{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
+		with open (os.path.join(cache_path, "signal", "{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
 			pickle.dump(buckets_signal[bucket_idx], f)
-		with open (os.path.join(cache_path, "sentence", "sentence_{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
+		with open (os.path.join(cache_path, "sentence", "{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
 			pickle.dump(buckets_sentence[bucket_idx], f)
 		buckets_signal[bucket_idx] = []
 		buckets_sentence[bucket_idx] = []
@@ -561,7 +561,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 				if write_to_file:
 					sys.stdout.write("\r")
 					sys.stdout.write(stdout.CLEAR)
-					sys.stdout.write("writing bucket {} ...".format(bucket_idx))
+					sys.stdout.write("Writing bucket {} ...".format(bucket_idx))
 					sys.stdout.flush()
 					save_bucket(bucket_idx)
 					current_num_data += num_signals_per_file
@@ -602,25 +602,31 @@ class Dataset(object):
 		sentence_files = os.listdir(sentence_path)
 		if len(signal_files) == 0:
 			raise Exception("Please run dataset.py before starting training.")
+		if len(sentence_files) == 0:
+			raise Exception("Please run dataset.py before starting training.")
 		assert len(signal_files) == len(sentence_files)
 
 		buckets_signal = []
+		buckets_sentence = []
 		for filename in signal_files:
-			pattern = r"signal_([0-9]+)_([0-9]+)\.bucket"
+			pattern = r"([0-9]+)_([0-9]+)\.bucket"
 			m = re.match(pattern , filename)
 			if m:
 				bucket_idx = int(m.group(1))
 				bucket_group = int(m.group(2))
 				while len(buckets_signal) <= bucket_idx:
 					buckets_signal.append([])
+					buckets_sentence.append([])
 				while len(buckets_signal[bucket_idx]) <= bucket_group:
 					buckets_signal[bucket_idx].append(None)
+					buckets_sentence[bucket_idx].append(None)
 
 		buckets_num_group = []
 		for bucket in buckets_signal:
 			buckets_num_group.append(len(bucket))
 		total_groups = sum(buckets_num_group)
 
+		self.data_path = data_path
 		self.buckets_signal = buckets_signal
 		self.buckets_num_group = buckets_num_group
 		self.total_groups = total_groups
@@ -629,10 +635,17 @@ class Dataset(object):
 
 	def get_minibatch(self, batchsize=32):
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
-		group_idx = np.random.choice(np.arange(len(self.buckets_signal[bucket_idx])), size=1)[0]
-		print(bucket_idx, group_idx)
-		print(self.buckets_signal[bucket_idx][group_idx])
-		pass
+		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
+		signals = self.buckets_signal[bucket_idx][group_idx]
+		if signals is None:
+			with open (os.path.join(self.data_path, "signal", "{}_{}.bucket".format(bucket_idx, group_idx)), "rb") as f:
+				signals = pickle.load(f)
+				self.buckets_signal[bucket_idx][group_idx] = signals
+		sentence = self.buckets_signal[bucket_idx][group_idx]
+		if sentence is None:
+			with open (os.path.join(self.data_path, "sentence", "{}_{}.bucket".format(bucket_idx, group_idx)), "rb") as f:
+				sentence = pickle.load(f)
+				self.buckets_sentence[bucket_idx][group_idx] = sentence
 
 if __name__ == "__main__":
 	try:
