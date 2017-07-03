@@ -31,7 +31,7 @@ def get_current_learning_rate(opt):
 		return opt.lr
 	if isinstance(opt, optimizers.Adam):
 		return opt.alpha
-	raise NotImplementationError()
+	raise NotImplementedError()
 
 def get_optimizer(name, lr, momentum):
 	if name == "sgd":
@@ -42,7 +42,7 @@ def get_optimizer(name, lr, momentum):
 		return optimizers.NesterovAG(lr=lr, momentum=momentum)
 	if name == "adam":
 		return optimizers.Adam(alpha=lr, beta1=momentum)
-	raise NotImplementationError()
+	raise NotImplementedError()
 
 def decay_learning_rate(opt, factor, final_value):
 	if isinstance(opt, optimizers.NesterovAG):
@@ -65,7 +65,7 @@ def decay_learning_rate(opt, factor, final_value):
 			return
 		opt.alpha *= factor
 		return
-	raise NotImplementationError()
+	raise NotImplementedError()
 
 def compute_character_error_rate(r, h):
 	if len(r) == 0:
@@ -85,19 +85,6 @@ def compute_character_error_rate(r, h):
 				delete = d[i-1][j] + 1
 				d[i][j] = min(substitute, insert, delete)
 	return float(d[len(r)][len(h)]) / len(r)
-
-def decay_learning_rate(opt, factor, final_value):
-	if isinstance(opt, optimizers.NesterovAG):
-		if opt.lr <= final_value:
-			return
-		opt.lr *= factor
-		return
-	if isinstance(opt, optimizers.Adam):
-		if opt.alpha <= final_value:
-			return
-		opt.alpha *= factor
-		return
-	raise NotImplementationError()
 
 def formatted_error(error_values):
 	errors = []
@@ -188,9 +175,11 @@ def main():
 	# ミニバッチを取れないものは除外
 	# for single GTX 1080
 	if args.architecture.startswith("zhang"):
-		batchsizes = [96, 96, 96, 64, 48, 32, 32, 32, 24, 24, 24, 16, 16, 16, 12, 12, 12, 12, 12]
+		batchsizes = [96, 96, 64, 64, 48, 32, 32, 32, 24, 24, 24, 16, 16, 16, 12, 12, 12, 12, 12]
+		batchsizes = [32, 24, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 6, 6, 6, 6, 6]
 	else:
-		batchsizes = [96, 96, 96, 96, 96, 80, 64, 64, 48, 48, 48, 32, 32, 32, 32, 16, 16, 12, 12]
+		batchsizes = [64, 64, 64, 64, 64, 64, 48, 32, 32, 32, 32, 32, 32, 16, 16, 16, 16, 12, 12]
+		batchsizes = [32, 32, 32, 24, 24, 24, 24, 16, 16, 16, 16, 16, 16, 8, 8, 8, 8, 6, 6]
 	batchsizes = batchsizes[:len(_buckets_feature)]
 
 	buckets_feature = []
@@ -387,7 +376,7 @@ if __name__ == "__main__":
 	parser.add_argument("--gpu-device", "-g", type=int, default=0) 
 	parser.add_argument("--interval", type=int, default=100)
 	parser.add_argument("--model-dir", "-m", type=str, default="model")
-	parser.add_argument("--dev-split", "-split", type=float, default=0.05)
+	parser.add_argument("--dev-split", "-split", type=float, default=0.01)
 	parser.add_argument("--train-filename", "-train", default=None)
 	parser.add_argument("--dev-filename", "-dev", default=None)
 

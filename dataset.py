@@ -9,8 +9,6 @@ import pickle
 from python_speech_features import logfbank
 from python_speech_features import fbank
 
-BUCKET_THRESHOLD = 32
-
 class stdout:
 	BOLD = "\033[1m"
 	END = "\033[0m"
@@ -219,8 +217,10 @@ def load_audio_features_and_transcriptions(wav_paths, transcription_paths, bucke
 
 	return dataset, max_sentence_length, max_logmel_length
 
-def get_bucket_idx(length):
-	return length // BUCKET_THRESHOLD
+def get_bucket_idx(signal, split_sec=0.5):
+	config = chainer.config
+	divider = config.sampling_rate * split_sec
+	return int(len(signal) // divider)
 
 def get_duration_seconds(length):
 	config = chainer.config
@@ -404,4 +404,212 @@ def load_buckets(buckets_limit, data_limit):
 	mean_x_batch = mean_x_batch[None, ...]
 	stddev_x_batch = stddev_x_batch[None, ...]
 
-	return buckets_feature, buckets_feature_length, buckets_sentence, mean_x_batch, stddev_x_batch
+	return buckets_feature, buckets_feature_length, buckets_sentence, mean_x_batch, stddev_x_batchc
+
+def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, data_limit):
+	assert len(wav_paths) > 0
+	assert len(transcription_paths) > 0
+
+	config = chainer.config
+	vocab = get_vocab()[0]
+	dataset = []
+	buckets_signal = []
+	buckets_sentence = []
+	buckets_file_indices = []
+	num_signals_in_single_file = 1000
+	max_sentence_length = 0
+	max_logmel_length = 0
+	current_num_data = 0
+	data_limit_exceeded = False
+	total_min = 0
+
+	def append_bucket(buckets, bucket_idx, data):
+		if len(buckets) <= bucket_idx:
+			while len(buckets) <= bucket_idx:
+				buckets.append([])
+		buckets[bucket_idx].append(data)
+
+	def add_to_bukcet(signal, sentence):
+		bucket_idx = get_bucket_idx(signal)
+		# add signal
+		append_bucket(buckets_signal, bucket_idx, signal)
+		# add sentence
+		append_bucket(buckets_sentence, bucket_idx, sentence)
+		# add file index
+		if len(buckets_file_indices) <= bucket_idx:
+			while len(buckets_file_indices) <= bucket_idx:
+				buckets_file_indices.append(0)
+		# check
+		if len(buckets_signal[bucket_idx]) > num_signals_in_single_file:
+			return True, bucket_idx
+		return False, bucket_idx
+
+	def save_bucket(bucket_idx):
+		if buckets_limit is not None and bucket_idx > buckets_limit:
+			return False
+		file_index = buckets_file_indices[bucket_idx]
+		with open (os.path.join(cache_path, "signal_{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
+			pickle.dump(buckets_signal[bucket_idx], f)
+		with open (os.path.join(cache_path, "sentence_{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
+			pickle.dump(buckets_sentence[bucket_idx], f)
+		buckets_signal[bucket_idx] = []
+		buckets_sentence[bucket_idx] = []
+		buckets_file_indices[bucket_idx] += 1
+		return True
+
+	for wav_dir, trn_dir in zip(wav_paths, transcription_paths):
+		wav_fs = os.listdir(wav_dir)
+		trn_fs = os.listdir(trn_dir)
+		wav_ids = set()
+		trn_ids = set()
+		for filename in wav_fs:
+			data_id = re.sub(r"\..+$", "", filename)
+			wav_ids.add(data_id)
+		for filename in trn_fs:
+			data_id = re.sub(r"\..+$", "", filename)
+			trn_ids.add(data_id)
+
+		if data_limit_exceeded:
+			break
+
+		for data_idx, wav_id in enumerate(wav_ids):
+
+			if data_limit_exceeded:
+				break
+
+			if wav_id not in trn_ids:
+				sys.stdout.write("\r")
+				sys.stdout.write(stdout.CLEAR)
+				print("%s.trn not found" % wav_id)
+				continue
+
+			wav_filename = "%s.wav" % wav_id
+			trn_filename = "%s.trn" % wav_id
+
+			# wavの読み込み
+			try:
+				sampling_rate, audio = wavfile.read(os.path.join(wav_dir, wav_filename))
+			except KeyboardInterrupt:
+				exit()
+			except Exception as e:
+				sys.stdout.write("\r")
+				sys.stdout.write(stdout.CLEAR)
+				print("failed to read {} ({})".format(wav_filename, str(e)))
+				continue
+
+			duration = audio.size / sampling_rate / 60
+			total_min += duration
+
+			sys.stdout.write("\r")
+			sys.stdout.write(stdout.CLEAR)
+			sys.stdout.write("loading {} ({}/{}) ... shape={}, rate={}, min={}, #buckets={}, #data={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(duration), len(buckets_signal), current_num_data))
+			sys.stdout.flush()
+
+			# 転記の読み込み
+			batch = []
+			with codecs.open(os.path.join(trn_dir, trn_filename), "r", "utf-8") as f:
+				for data in f:
+					period_str, channel, sentence_str = data.split(":")
+					period = period_str.split("-")
+					start_sec, end_sec = float(period[0]), float(period[1])
+					start_frame = int(start_sec * sampling_rate)
+					end_frame = int(end_sec * sampling_rate)
+
+					assert start_frame <= len(audio)
+					assert end_frame <= len(audio)
+
+					signal = audio[start_frame:end_frame]
+
+					assert len(signal) == end_frame - start_frame
+
+					# channelに従って選択
+					if signal.ndim == 2:
+						if channel == "S":	# 両方に含まれる場合
+							signal = signal[:, 0]
+						elif channel == "L":
+							signal = signal[:, 0]
+						elif channel == "R":
+							signal = signal[:, 1]
+						else:
+							raise Exception()
+
+					# 文字IDに変換
+					sentence = []
+					sentence_str = sentence_str.strip()
+					for char in sentence_str:
+						if char not in vocab:
+							continue
+						char_id = vocab[char]
+						sentence.append(char_id)
+
+					batch.append((signal, sentence))
+
+			# 信号長と転記文字列長の不自然な部分を検出
+			num_points_per_character = 0	# 1文字あたりの信号の数
+			for signal, sentence in batch:
+				num_points_per_character += len(signal) / len(sentence)
+			num_points_per_character /= len(signal)
+
+			accept_rate = 0.4	# ズレの割合がこれ以下なら教師データに誤りが含まれている可能性があるので目視で確認すべき
+			if trn_filename == "M03F0017.trn":	# CSJのこのファイルだけ異常な早口がある
+				accept_rate = 0.05
+			for idx, (signal, sentence) in enumerate(batch):
+				error = abs(len(signal) - num_points_per_character * len(sentence))
+				rate = error / len(signal)
+				if rate < accept_rate:
+					raise Exception(len(signal), len(sentence), num_points_per_character, rate, trn_filename, idx + 1)
+				
+				write_to_file, bucket_idx = add_to_bukcet(signal, sentence)
+				if write_to_file:
+					sys.stdout.write("\r")
+					sys.stdout.write(stdout.CLEAR)
+					sys.stdout.write("writing bucket {} ...".format(bucket_idx))
+					sys.stdout.flush()
+					save_bucket(bucket_idx)
+					current_num_data += num_signals_in_single_file
+					if data_limit is not None and current_num_data >= data_limit:
+						data_limit_exceeded = True
+						break
+
+	sys.stdout.write("\r")
+	sys.stdout.write(stdout.CLEAR)
+	if data_limit_exceeded == False:
+		for bucket_idx, bucket in enumerate(buckets_signal):
+			if len(bucket) > 0:
+				if save_bucket(bucket_idx) == False:
+					num_unsaved_data = len(buckets_signal[bucket_idx])
+					print("bucket {} skipped. (#data={})".format(bucket_idx, num_unsaved_data))
+					current_num_data -= num_unsaved_data
+	print("total: {} hour - {} data".format(int(total_min / 60), current_num_data))
+
+
+def load_buckets(buckets_limit, data_limit):
+	if buckets_limit is not None:
+		assert buckets_limit > 0
+	if data_limit is not None:
+		assert data_limit > 0
+
+	wav_path_list = [
+		"/home/aibo/sandbox/CSJ/WAV/core",
+		"/home/aibo/sandbox/CSJ/WAV/noncore",
+	]
+	transcription_path_list = [
+		"/home/aibo/sandbox/CSJ_/core",
+		"/home/aibo/sandbox/CSJ_/noncore",
+	]
+	cache_path = "/home/aibo/sandbox/wav"
+
+	try:
+		os.mkdir(cache_path)
+	except:
+		pass
+
+	mean_filename = os.path.join(cache_path, "mean.npy")
+	std_filename = os.path.join(cache_path, "std.npy")	
+
+	# すべての.wavを読み込み、一定の長さごとに保存
+	generate_buckets(wav_path_list, transcription_path_list, cache_path, buckets_limit, data_limit)
+
+if __name__ == "__main__":
+	chainer.global_config.sampling_rate = 16000
+	load_buckets(20, None)

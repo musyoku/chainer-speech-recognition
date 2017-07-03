@@ -2,17 +2,31 @@
 
 in progress ...
 
-TODO:
+データがメモリに乗り切らないので必要になった時にファイルから読み出すようになっています。
+
+そのためSSDに音声ファイルを置くことをおすすめします。
+
+## Requirements
+
+- Python 2 or 3
+- Chainer 2+
+- SciPy
+- [python_speech_features](https://github.com/jameslyons/python_speech_features)
+
+## TODO
+
 - [ ] CTC
 - [ ] 声道長歪み
 - [ ] 話速歪み
 - [ ] ランダム歪み
 - [ ] 大規模データの読み出し
 
-Tools:
+## Tools
+
 - [CSJ音声コーパスの前処理ツール](https://github.com/musyoku/csj-preprocesser)
 
-References:
+## References
+
 - [形態素解析も辞書も言語モデルもいらないend-to-end音声認識](https://www.slideshare.net/t_koshikawa/endtoend)
 - [『日本語話し言葉コーパス』を用いた音声認識の進展](http://sap.ist.i.kyoto-u.ac.jp/lab/bib/report/KAW-orc04.pdf)
 - [Deep Neural Networkに基づく日本語音声認識の基礎評価](https://ipsj.ixsq.nii.ac.jp/ej/?action=repository_uri&item_id=94549&file_id=1&file_no=1)
