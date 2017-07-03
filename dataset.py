@@ -217,9 +217,8 @@ def load_audio_features_and_transcriptions(wav_paths, transcription_paths, bucke
 
 	return dataset, max_sentence_length, max_logmel_length
 
-def get_bucket_idx(signal, split_sec=0.5):
-	config = chainer.config
-	divider = config.sampling_rate * split_sec
+def get_bucket_idx(signal, sampling_rate=16000, split_sec=0.5):
+	divider = sampling_rate * split_sec
 	return int(len(signal) // divider)
 
 def get_duration_seconds(length):
@@ -406,7 +405,7 @@ def load_buckets(buckets_limit, data_limit):
 
 	return buckets_feature, buckets_feature_length, buckets_sentence, mean_x_batch, stddev_x_batchc
 
-def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, data_limit):
+def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, data_limit, num_signals_per_file=1000):
 	assert len(wav_paths) > 0
 	assert len(transcription_paths) > 0
 
@@ -416,7 +415,6 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 	buckets_signal = []
 	buckets_sentence = []
 	buckets_file_indices = []
-	num_signals_in_single_file = 1000
 	max_sentence_length = 0
 	max_logmel_length = 0
 	current_num_data = 0
@@ -440,7 +438,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			while len(buckets_file_indices) <= bucket_idx:
 				buckets_file_indices.append(0)
 		# check
-		if len(buckets_signal[bucket_idx]) > num_signals_in_single_file:
+		if len(buckets_signal[bucket_idx]) > num_signals_per_file:
 			return True, bucket_idx
 		return False, bucket_idx
 
@@ -448,9 +446,9 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		if buckets_limit is not None and bucket_idx > buckets_limit:
 			return False
 		file_index = buckets_file_indices[bucket_idx]
-		with open (os.path.join(cache_path, "signal_{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
+		with open (os.path.join(cache_path, "signal", "signal_{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
 			pickle.dump(buckets_signal[bucket_idx], f)
-		with open (os.path.join(cache_path, "sentence_{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
+		with open (os.path.join(cache_path, "sentence", "sentence_{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
 			pickle.dump(buckets_sentence[bucket_idx], f)
 		buckets_signal[bucket_idx] = []
 		buckets_sentence[bucket_idx] = []
@@ -494,7 +492,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			except Exception as e:
 				sys.stdout.write("\r")
 				sys.stdout.write(stdout.CLEAR)
-				print("failed to read {} ({})".format(wav_filename, str(e)))
+				print("Failed to read {} ({})".format(wav_filename, str(e)))
 				continue
 
 			duration = audio.size / sampling_rate / 60
@@ -502,7 +500,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 
 			sys.stdout.write("\r")
 			sys.stdout.write(stdout.CLEAR)
-			sys.stdout.write("loading {} ({}/{}) ... shape={}, rate={}, min={}, #buckets={}, #data={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(duration), len(buckets_signal), current_num_data))
+			sys.stdout.write("Loading {} ({}/{}) ... shape={}, rate={}, min={}, #buckets={}, #data={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(duration), len(buckets_signal), current_num_data))
 			sys.stdout.flush()
 
 			# 転記の読み込み
@@ -566,7 +564,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 					sys.stdout.write("writing bucket {} ...".format(bucket_idx))
 					sys.stdout.flush()
 					save_bucket(bucket_idx)
-					current_num_data += num_signals_in_single_file
+					current_num_data += num_signals_per_file
 					if data_limit is not None and current_num_data >= data_limit:
 						data_limit_exceeded = True
 						break
@@ -583,33 +581,79 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 	print("total: {} hour - {} data".format(int(total_min / 60), current_num_data))
 
 
-def load_buckets(buckets_limit, data_limit):
-	if buckets_limit is not None:
-		assert buckets_limit > 0
-	if data_limit is not None:
-		assert data_limit > 0
+wav_path_list = [
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
+]
+transcription_path_list = [
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
+]
+cache_path = "/home/aibo/sandbox/wav"
 
-	wav_path_list = [
-		"/home/aibo/sandbox/CSJ/WAV/core",
-		"/home/aibo/sandbox/CSJ/WAV/noncore",
-	]
-	transcription_path_list = [
-		"/home/aibo/sandbox/CSJ_/core",
-		"/home/aibo/sandbox/CSJ_/noncore",
-	]
-	cache_path = "/home/aibo/sandbox/wav"
+class Dataset(object):
+	def __init__(self, data_path, num_signals_per_file=1000, num_buckets_to_store_memory=200):
+		self.num_signals_per_file = num_signals_per_file
+		self.num_signals_memory = num_buckets_to_store_memory
 
+		signal_path = os.path.join(data_path, "signal")
+		sentence_path = os.path.join(data_path, "sentence")
+		signal_files = os.listdir(signal_path)
+		sentence_files = os.listdir(sentence_path)
+		if len(signal_files) == 0:
+			raise Exception("Please run dataset.py before starting training.")
+		assert len(signal_files) == len(sentence_files)
+
+		buckets_signal = []
+		for filename in signal_files:
+			pattern = r"signal_([0-9]+)_([0-9]+)\.bucket"
+			m = re.match(pattern , filename)
+			if m:
+				bucket_idx = int(m.group(1))
+				bucket_group = int(m.group(2))
+				while len(buckets_signal) <= bucket_idx:
+					buckets_signal.append([])
+				while len(buckets_signal[bucket_idx]) <= bucket_group:
+					buckets_signal[bucket_idx].append(None)
+
+		buckets_num_group = []
+		for bucket in buckets_signal:
+			buckets_num_group.append(len(bucket))
+		total_groups = sum(buckets_num_group)
+
+		self.buckets_signal = buckets_signal
+		self.buckets_num_group = buckets_num_group
+		self.total_groups = total_groups
+
+		self.bucket_distribution = np.asarray(buckets_num_group) / total_groups
+
+	def get_minibatch(self, batchsize=32):
+		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
+		group_idx = np.random.choice(np.arange(len(self.buckets_signal[bucket_idx])), size=1)[0]
+		print(bucket_idx, group_idx)
+		print(self.buckets_signal[bucket_idx][group_idx])
+		pass
+
+if __name__ == "__main__":
 	try:
 		os.mkdir(cache_path)
 	except:
 		pass
+	try:
+		os.mkdir(os.path.join(cache_path, "signal"))
+	except:
+		pass
+	try:
+		os.mkdir(os.path.join(cache_path, "sentence"))
+	except:
+		pass
 
 	mean_filename = os.path.join(cache_path, "mean.npy")
-	std_filename = os.path.join(cache_path, "std.npy")	
+	std_filename = os.path.join(cache_path, "std.npy")
+
+	dataset = Dataset(cache_path)
+	dataset.get_minibatch()
+	raise Exception()
 
 	# すべての.wavを読み込み、一定の長さごとに保存
-	generate_buckets(wav_path_list, transcription_path_list, cache_path, buckets_limit, data_limit)
-
-if __name__ == "__main__":
-	chainer.global_config.sampling_rate = 16000
-	load_buckets(20, None)
+	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000)
