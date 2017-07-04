@@ -11,7 +11,7 @@ from python_speech_features import fbank
 
 # for data augmentation
 import pyworld as pw
-from acoustics.generator import noise
+from acoustics import generator
 
 class stdout:
 	BOLD = "\033[1m"
@@ -236,12 +236,12 @@ def load_buckets(buckets_limit, data_limit):
 		assert data_limit > 0
 
 	wav_paths = [
-		"/home/stark/sandbox/CSJ/WAV/core",
+		"/home/aibo/sandbox/CSJ/WAV/core",
 	]
 	transcription_paths = [
-		"/home/stark/sandbox/CSJ_/core",
+		"/home/aibo/sandbox/CSJ_/core",
 	]
-	data_cache_path = "/home/stark/sandbox/cache"
+	data_cache_path = "/home/aibo/sandbox/cache"
 
 	mean_filename = os.path.join(data_cache_path, "mean.npy")
 	std_filename = os.path.join(data_cache_path, "std.npy")	
@@ -589,14 +589,14 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 
 
 wav_path_list = [
-	"/home/aibo/sandbox/CSJ/WAV/core",
-	"/home/aibo/sandbox/CSJ/WAV/noncore",
+	"/home/stark/sandbox/CSJ/WAV/core",
+	"/home/stark/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/aibo/sandbox/CSJ_/core",
-	"/home/aibo/sandbox/CSJ_/noncore",
+	"/home/stark/sandbox/CSJ_/core",
+	"/home/stark/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/aibo/sandbox/wav"
+cache_path = "/home/stark/sandbox/wav"
 
 class Dataset(object):
 	def __init__(self, data_path, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0):
@@ -669,6 +669,8 @@ class Dataset(object):
 		self.bucket_distribution = np.asarray(buckets_num_group) / total_groups
 
 	def get_minibatch(self, batchsize=32, augmentation=False):
+		import time
+		current_time = time.time()
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
 		num_data = self.buckets_num_data[bucket_idx][group_idx]
@@ -703,7 +705,7 @@ class Dataset(object):
 				ap = pw.d4c(signal, f0, t, config.sampling_rate)        # extract aperiodicity
 
 				# 話速歪み
-				speed = 1
+				speed = 1.2
 				orig_length = len(f0)
 				new_length = int(orig_length / speed)
 				dim = ap.shape[1]
@@ -718,27 +720,43 @@ class Dataset(object):
 					new_sp[t] = sp[i]
 					new_ap[t] = ap[i]
 
+				f0 = new_f0
+				sp = new_sp
+				ap = new_ap
+
+				new_sp = np.empty((new_length, dim), dtype=np.float64)
+				new_ap = np.empty((new_length, dim), dtype=np.float64)
+
 				# 声道長歪み
-				ratio = 1
+				ratio = 1.2
 				for t in range(new_length):
 					for d in range(dim):
 						i = int(d * ratio)
-						new_sp[t, d] = sp[t, i]
-						new_ap[t, d] = ap[t, i]
+						if i < dim:
+							new_sp[t, d] = sp[t, i]
+							new_ap[t, d] = ap[t, i]
+						else:
+							new_sp[t, d] = sp[t, -1]
+							new_ap[t, d] = ap[t, -1]
+
+				# new_f0 = f0 * 0.8
 
 				# y = pw.synthesize(f0, sp, ap, config.sampling_rate)
-				# path = "/home/aibo/sandbox/world"
+				# path = "/home/stark/sandbox/world"
 
-				# y = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
-				# wavfile.write(os.path.join(path, "%d.1.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
+				# wavfile.write(os.path.join(path, "%d.original.wav" % data_idx), config.sampling_rate, signal.astype(np.int16))
 
 				# # y = pw.synthesize(f0 * 2.0, sp, ap, config.sampling_rate)
 				# # wavfile.write(os.path.join(path, "%d.2.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
 
-				gain = 1000
-				noise = noise(len(signal), color="white") * gain
+				y = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
+				gain = 500
+				noise = generator.noise(len(y), color="white") * gain
 
-				# wavfile.write(os.path.join(path, "%d.white.wav" % data_idx), config.sampling_rate, (signal + noise).astype(np.int16))
+				# wavfile.write(os.path.join(path, "%d.track.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
+				
+				# y = pw.synthesize(new_f0, sp, ap, config.sampling_rate)
+				# wavfile.write(os.path.join(path, "%d.f0.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
 				# pass
 
 			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
@@ -748,6 +766,7 @@ class Dataset(object):
 				max_sentence_length = len(sentence)
 
 		assert max_feature_length > 0
+		print(time.time() - current_time)
 
 if __name__ == "__main__":
 	try:

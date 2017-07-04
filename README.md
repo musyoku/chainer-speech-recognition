@@ -13,10 +13,20 @@ in progress ...
 - SciPy
 - [python_speech_features](https://github.com/jameslyons/python_speech_features)
 
+```
+pip install python_speech_features
+```
+
 for data augmentation
 
 - [python-acoustics](https://github.com/python-acoustics/python-acoustics) 
-- [Python-Wrapper-for-World-Vocoder](https://github.com/JeremyCCHsu/Python-Wrapper-for-World-Vocoder) 
+- [Python-Wrapper-for-World-Vocoder](https://github.com/JeremyCCHsu/Python-Wrapper-for-World-Vocoder)
+
+```
+pip install cython
+pip install pyworld
+pip install acoustics
+``` 
 
 ## TODO
 
