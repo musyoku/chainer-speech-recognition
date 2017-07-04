@@ -668,42 +668,8 @@ class Dataset(object):
 		self.total_buckets = total_buckets
 		self.bucket_distribution = np.asarray(buckets_num_group) / total_groups
 
-	def get_minibatch(self, batchsize=32, augmentation=True):
+	def get_minibatch(self, batchsize=32, augmentation=False):
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-		bucket_idx = 16
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
 		num_data = self.buckets_num_data[bucket_idx][group_idx]
 		signal_list = self.buckets_signal[bucket_idx][group_idx]
@@ -760,10 +726,8 @@ class Dataset(object):
 						new_sp[t, d] = sp[t, i]
 						new_ap[t, d] = ap[t, i]
 
-
-
 				# y = pw.synthesize(f0, sp, ap, config.sampling_rate)
-				path = "/home/aibo/sandbox/world"
+				# path = "/home/aibo/sandbox/world"
 
 				# y = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
 				# wavfile.write(os.path.join(path, "%d.1.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
@@ -772,10 +736,9 @@ class Dataset(object):
 				# # wavfile.write(os.path.join(path, "%d.2.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
 
 				gain = 1000
-				white = noise(len(signal), color="white")
-				pink = noise(len(signal), color="pink")
-				wavfile.write(os.path.join(path, "%d.white.wav" % data_idx), config.sampling_rate, (signal + white * gain).astype(np.int16))
-				wavfile.write(os.path.join(path, "%d.pink.wav" % data_idx), config.sampling_rate, (signal + pink * gain).astype(np.int16))
+				noise = noise(len(signal), color="white") * gain
+
+				# wavfile.write(os.path.join(path, "%d.white.wav" % data_idx), config.sampling_rate, (signal + noise).astype(np.int16))
 				# pass
 
 			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
