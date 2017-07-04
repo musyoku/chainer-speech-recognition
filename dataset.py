@@ -11,6 +11,7 @@ from python_speech_features import fbank
 
 # for data augmentation
 import pyworld as pw
+from acoustics.generator import noise
 
 class stdout:
 	BOLD = "\033[1m"
@@ -673,7 +674,33 @@ class Dataset(object):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 		bucket_idx = 16
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -700,6 +727,8 @@ class Dataset(object):
 		for data_idx in indices:
 			signal = signal_list[data_idx]
 			sentence = sentence_list[data_idx]
+
+			# データ拡大
 			if augmentation:
 				signal = np.asarray(signal, dtype=np.float64)
 				_f0, t = pw.dio(signal, config.sampling_rate)    		# raw pitch extractor
@@ -707,9 +736,7 @@ class Dataset(object):
 				sp = pw.cheaptrick(signal, f0, t, config.sampling_rate) # extract smoothed spectrogram
 				ap = pw.d4c(signal, f0, t, config.sampling_rate)        # extract aperiodicity
 
-				print(ap)
-
-				# 話速
+				# 話速歪み
 				speed = 1
 				orig_length = len(f0)
 				new_length = int(orig_length / speed)
@@ -725,18 +752,39 @@ class Dataset(object):
 					new_sp[t] = sp[i]
 					new_ap[t] = ap[i]
 
+				# 声道長歪み
+				ratio = 1
+				for t in range(new_length):
+					for d in range(dim):
+						i = int(d * ratio)
+						new_sp[t, d] = sp[t, i]
+						new_ap[t, d] = ap[t, i]
+
+
+
 				# y = pw.synthesize(f0, sp, ap, config.sampling_rate)
+				path = "/home/aibo/sandbox/world"
+
 				# y = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
-				# path = "/home/aibo/sandbox/world"
 				# wavfile.write(os.path.join(path, "%d.1.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
-				# wavfile.write(os.path.join(path, "%d.original.wav" % data_idx), config.sampling_rate, signal.astype(np.int16))
-				pass
+
+				# # y = pw.synthesize(f0 * 2.0, sp, ap, config.sampling_rate)
+				# # wavfile.write(os.path.join(path, "%d.2.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
+
+				gain = 1000
+				white = noise(len(signal), color="white")
+				pink = noise(len(signal), color="pink")
+				wavfile.write(os.path.join(path, "%d.white.wav" % data_idx), config.sampling_rate, (signal + white * gain).astype(np.int16))
+				wavfile.write(os.path.join(path, "%d.pink.wav" % data_idx), config.sampling_rate, (signal + pink * gain).astype(np.int16))
+				# pass
+
 			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
 			if logmel.shape[1] > max_feature_length:
 				max_feature_length = logmel.shape[1]
 			if len(sentence) > max_sentence_length:
 				max_sentence_length = len(sentence)
-			print(logmel.shape)
+
+		assert max_feature_length > 0
 
 if __name__ == "__main__":
 	try:
