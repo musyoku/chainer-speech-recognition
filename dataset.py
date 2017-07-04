@@ -9,6 +9,9 @@ import pickle
 from python_speech_features import logfbank
 from python_speech_features import fbank
 
+# for data augmentation
+import pyworld as pw
+
 class stdout:
 	BOLD = "\033[1m"
 	END = "\033[0m"
@@ -446,9 +449,12 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		if buckets_limit is not None and bucket_idx > buckets_limit:
 			return False
 		file_index = buckets_file_indices[bucket_idx]
-		with open (os.path.join(cache_path, "signal", "{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
+		num_signals = len(buckets_signal[bucket_idx])
+		with open (os.path.join(cache_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_signals)), "wb") as f:
 			pickle.dump(buckets_signal[bucket_idx], f)
-		with open (os.path.join(cache_path, "sentence", "{}_{}.bucket".format(bucket_idx, file_index)), "wb") as f:
+		num_sentences = len(buckets_sentence[bucket_idx])
+		assert num_signals == num_sentences
+		with open (os.path.join(cache_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_sentences)), "wb") as f:
 			pickle.dump(buckets_sentence[bucket_idx], f)
 		buckets_signal[bucket_idx] = []
 		buckets_sentence[bucket_idx] = []
@@ -592,60 +598,145 @@ transcription_path_list = [
 cache_path = "/home/aibo/sandbox/wav"
 
 class Dataset(object):
-	def __init__(self, data_path, num_signals_per_file=1000, num_buckets_to_store_memory=200):
+	def __init__(self, data_path, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0):
 		self.num_signals_per_file = num_signals_per_file
 		self.num_signals_memory = num_buckets_to_store_memory
+		self.dev_split = dev_split
+		self.data_path = data_path
 
 		signal_path = os.path.join(data_path, "signal")
 		sentence_path = os.path.join(data_path, "sentence")
 		signal_files = os.listdir(signal_path)
 		sentence_files = os.listdir(sentence_path)
 		if len(signal_files) == 0:
-			raise Exception("Please run dataset.py before starting training.")
+			raise Exception("Run dataset.py before starting training.")
 		if len(sentence_files) == 0:
-			raise Exception("Please run dataset.py before starting training.")
+			raise Exception("Run dataset.py before starting training.")
 		assert len(signal_files) == len(sentence_files)
 
 		buckets_signal = []
 		buckets_sentence = []
+		buckets_num_data = []
 		for filename in signal_files:
-			pattern = r"([0-9]+)_([0-9]+)\.bucket"
+			pattern = r"([0-9]+)_([0-9]+)_([0-9]+)\.bucket"
 			m = re.match(pattern , filename)
 			if m:
 				bucket_idx = int(m.group(1))
-				bucket_group = int(m.group(2))
+				group_idx = int(m.group(2))
+				num_data = int(m.group(3))
 				while len(buckets_signal) <= bucket_idx:
 					buckets_signal.append([])
 					buckets_sentence.append([])
-				while len(buckets_signal[bucket_idx]) <= bucket_group:
+					buckets_num_data.append([])
+				while len(buckets_signal[bucket_idx]) <= group_idx:
 					buckets_signal[bucket_idx].append(None)
 					buckets_sentence[bucket_idx].append(None)
+					buckets_num_data[bucket_idx].append(0)
+				buckets_num_data[bucket_idx][group_idx] = num_data
 
 		buckets_num_group = []
 		for bucket in buckets_signal:
 			buckets_num_group.append(len(bucket))
 		total_groups = sum(buckets_num_group)
+		total_buckets = len(buckets_signal)
 
-		self.data_path = data_path
+		np.random.seed(seed)
+		buckets_indices_train = []
+		buckets_indices_dev = []
+		for bucket_idx in range(total_buckets):
+			num_groups = buckets_num_group[bucket_idx]
+			indices_train = []
+			indices_dev = []
+			for group_idx in range(num_groups):
+				num_data = buckets_num_data[bucket_idx][group_idx]
+				indices = np.arange(num_data)
+				np.random.shuffle(indices)
+				num_dev = int(num_data * dev_split)
+				indices_train.append(indices[num_dev:])
+				indices_dev.append(indices[:num_dev])
+			buckets_indices_train.append(indices_train)
+			buckets_indices_dev.append(indices_dev)
+
 		self.buckets_signal = buckets_signal
 		self.buckets_num_group = buckets_num_group
-		self.total_groups = total_groups
+		self.buckets_num_data = buckets_num_data
+		self.buckets_indices_train = buckets_indices_train
+		self.buckets_indices_dev = buckets_indices_dev
 
+		self.total_groups = total_groups
+		self.total_buckets = total_buckets
 		self.bucket_distribution = np.asarray(buckets_num_group) / total_groups
 
-	def get_minibatch(self, batchsize=32):
+	def get_minibatch(self, batchsize=32, augmentation=True):
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
+
+
+
+
+		bucket_idx = 16
+
+
+
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
-		signals = self.buckets_signal[bucket_idx][group_idx]
-		if signals is None:
-			with open (os.path.join(self.data_path, "signal", "{}_{}.bucket".format(bucket_idx, group_idx)), "rb") as f:
-				signals = pickle.load(f)
-				self.buckets_signal[bucket_idx][group_idx] = signals
-		sentence = self.buckets_signal[bucket_idx][group_idx]
-		if sentence is None:
-			with open (os.path.join(self.data_path, "sentence", "{}_{}.bucket".format(bucket_idx, group_idx)), "rb") as f:
-				sentence = pickle.load(f)
-				self.buckets_sentence[bucket_idx][group_idx] = sentence
+		num_data = self.buckets_num_data[bucket_idx][group_idx]
+		signal_list = self.buckets_signal[bucket_idx][group_idx]
+		if signal_list is None:
+			with open (os.path.join(self.data_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
+				signal_list = pickle.load(f)
+				self.buckets_signal[bucket_idx][group_idx] = signal_list
+		sentence_list = self.buckets_signal[bucket_idx][group_idx]
+		if sentence_list is None:
+			with open (os.path.join(self.data_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
+				sentence_list = pickle.load(f)
+				self.buckets_sentence[bucket_idx][group_idx] = sentence_list
+		indices = self.buckets_indices_train[bucket_idx][group_idx]
+		np.random.shuffle(indices)
+		batchsize = len(indices) if batchsize > len(indices) else batchsize
+		indices = indices[:batchsize]
+		signals_batch = []
+		config = chainer.config
+		max_feature_length = 0
+		max_sentence_length = 0
+		for data_idx in indices:
+			signal = signal_list[data_idx]
+			sentence = sentence_list[data_idx]
+			if augmentation:
+				signal = np.asarray(signal, dtype=np.float64)
+				_f0, t = pw.dio(signal, config.sampling_rate)    		# raw pitch extractor
+				f0 = pw.stonemask(signal, _f0, t, config.sampling_rate) # pitch refinement
+				sp = pw.cheaptrick(signal, f0, t, config.sampling_rate) # extract smoothed spectrogram
+				ap = pw.d4c(signal, f0, t, config.sampling_rate)        # extract aperiodicity
+
+				print(ap)
+
+				# 話速
+				speed = 1
+				orig_length = len(f0)
+				new_length = int(orig_length / speed)
+				dim = ap.shape[1]
+
+				new_f0 = np.empty((new_length,), dtype=np.float64)
+				new_sp = np.empty((new_length, dim), dtype=np.float64)
+				new_ap = np.empty((new_length, dim), dtype=np.float64)
+
+				for t in range(new_length):
+					i = int(t * speed)
+					new_f0[t] = f0[i]
+					new_sp[t] = sp[i]
+					new_ap[t] = ap[i]
+
+				# y = pw.synthesize(f0, sp, ap, config.sampling_rate)
+				# y = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
+				# path = "/home/aibo/sandbox/world"
+				# wavfile.write(os.path.join(path, "%d.1.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
+				# wavfile.write(os.path.join(path, "%d.original.wav" % data_idx), config.sampling_rate, signal.astype(np.int16))
+				pass
+			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
+			if logmel.shape[1] > max_feature_length:
+				max_feature_length = logmel.shape[1]
+			if len(sentence) > max_sentence_length:
+				max_sentence_length = len(sentence)
+			print(logmel.shape)
 
 if __name__ == "__main__":
 	try:
@@ -664,6 +755,22 @@ if __name__ == "__main__":
 	mean_filename = os.path.join(cache_path, "mean.npy")
 	std_filename = os.path.join(cache_path, "std.npy")
 
+
+
+	sampling_rate = 16000
+	frame_width = 0.032		# sec
+	frame_shift = 0.01		# sec
+	gpu_ids = [0, 1, 3]		# 複数GPUを使う場合
+	num_fft = int(sampling_rate * frame_width)
+	num_mel_filters = 40
+	chainer.global_config.sampling_rate = sampling_rate
+	chainer.global_config.frame_width = frame_width
+	chainer.global_config.frame_shift = frame_shift
+	chainer.global_config.num_fft = num_fft
+	chainer.global_config.num_mel_filters = num_mel_filters
+	chainer.global_config.window_func = lambda x:np.hanning(x)
+	chainer.global_config.using_delta = True
+	chainer.global_config.using_delta_delta = True
 	dataset = Dataset(cache_path)
 	dataset.get_minibatch()
 	raise Exception()
