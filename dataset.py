@@ -485,7 +485,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			if config.using_delta_delta:
 				logmel = np.concatenate((logmel, delta_delta), axis=1)
 				div += 1
-			logmel = np.reshape(logmel, (config.num_mel_filters, div, -1))
+			logmel = np.reshape(logmel, (config.num_mel_filters, div, -1)).swapaxes(1, 2)
 			mean += np.mean(logmel, axis=2, keepdims=True) / num_signals
 			std += np.std(logmel, axis=2, keepdims=True) / num_signals
 
@@ -632,19 +632,21 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 	feature_std /= statistics_denominator
 	print(feature_mean)
 	print(feature_std)
+	print(feature_mean.shape)
+	print(feature_std.shape)
 	np.save(os.path.join(cache_path, "mean.npy"), feature_mean)
 	np.save(os.path.join(cache_path, "std.npy"), feature_std)
 
 
 wav_path_list = [
-	"/home/aibo/sandbox/CSJ/WAV/core",
-	"/home/aibo/sandbox/CSJ/WAV/noncore",
+	"/home/stark/sandbox/CSJ/WAV/core",
+	"/home/stark/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/aibo/sandbox/CSJ_/core",
-	"/home/aibo/sandbox/CSJ_/noncore",
+	"/home/stark/sandbox/CSJ_/core",
+	"/home/stark/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/aibo/sandbox/wav"
+cache_path = "/home/stark/sandbox/wav"
 
 class Dataset(object):
 	def __init__(self, data_path, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0):
@@ -653,15 +655,32 @@ class Dataset(object):
 		self.dev_split = dev_split
 		self.data_path = data_path
 
+
+
 		signal_path = os.path.join(data_path, "signal")
 		sentence_path = os.path.join(data_path, "sentence")
 		signal_files = os.listdir(signal_path)
 		sentence_files = os.listdir(sentence_path)
-		if len(signal_files) == 0:
+
+		mean_filename = os.path.join(data_path, "mean.npy")
+		std_filename = os.path.join(data_path, "std.npy")
+
+		try:
+			if len(signal_files) == 0:
+				raise Exception()
+			if len(sentence_files) == 0:
+				raise Exception()
+			if len(signal_files) != len(sentence_files):
+				raise Exception()
+			if os.path.isfile(mean_filename) == False:
+				raise Exception()
+			if os.path.isfile(std_filename) == False:
+				raise Exception()
+		except:
 			raise Exception("Run dataset.py before starting training.")
-		if len(sentence_files) == 0:
-			raise Exception("Run dataset.py before starting training.")
-		assert len(signal_files) == len(sentence_files)
+
+		self.mean = np.load(mean_filename)[None, ...]
+		self.std = np.load(std_filename)[None, ...]
 
 		buckets_signal = []
 		buckets_sentence = []
@@ -718,27 +737,33 @@ class Dataset(object):
 		self.cached_indices = []
 
 	def get_minibatch(self, batchsize=32, augmentation=False):
+		config = chainer.config
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
 		num_data = self.buckets_num_data[bucket_idx][group_idx]
+
 		signal_list = self.buckets_signal[bucket_idx][group_idx]
 		if signal_list is None:
 			with open (os.path.join(self.data_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
 				signal_list = pickle.load(f)
 				self.buckets_signal[bucket_idx][group_idx] = signal_list
+
 		sentence_list = self.buckets_signal[bucket_idx][group_idx]
 		if sentence_list is None:
 			with open (os.path.join(self.data_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
 				sentence_list = pickle.load(f)
 				self.buckets_sentence[bucket_idx][group_idx] = sentence_list
+				
 		indices = self.buckets_indices_train[bucket_idx][group_idx]
 		np.random.shuffle(indices)
 		batchsize = len(indices) if batchsize > len(indices) else batchsize
 		indices = indices[:batchsize]
 		signals_batch = []
-		config = chainer.config
 		max_feature_length = 0
 		max_sentence_length = 0
+
+		extracted_features = []
+
 		for data_idx in indices:
 			signal = signal_list[data_idx]
 			sentence = sentence_list[data_idx]
@@ -796,9 +821,9 @@ class Dataset(object):
 				# # y = pw.synthesize(f0 * 2.0, sp, ap, config.sampling_rate)
 				# # wavfile.write(os.path.join(path, "%d.2.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
 
-				y = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
+				signal = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
 				gain = 500
-				noise = generator.noise(len(y), color="white") * gain
+				noise = generator.noise(len(signal), color="white") * gain
 
 				# wavfile.write(os.path.join(path, "%d.track.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
 				
@@ -813,14 +838,37 @@ class Dataset(object):
 				max_sentence_length = len(sentence)
 
 			if logmel.shape[1] == 0:
-				pass
+				continue
+
+			extracted_features.append((logmel, delta, delta_delta))
 
 		assert max_feature_length > 0
 
+		# 一定以上はメモリ解放
 		self.cached_indices.append((bucket_idx, group_idx))
 		if len(self.cached_indices) > self.num_signals_memory:
 			_bucket_idx, _group_idx = self.cached_indices.pop(0)
 			self.buckets_signal[_bucket_idx][_group_idx] = None
+
+		batchsize = len(extracted_features)
+		channels = 1
+		if config.using_delta:
+			channels += 1
+		if config.using_delta_delta:
+			channels += 1
+		height = config.num_mel_filters
+		feature_batch = np.zeros((batchsize, channels, height, max_feature_length), dtype=np.float32)
+
+		for batch_idx, (logmel, delta, delta_delta) in enumerate(extracted_features):
+			length = logmel.shape[1]
+			feature_batch[batch_idx, 0, :, :length] = logmel
+			if config.using_delta:
+				feature_batch[batch_idx, 1, :, :length] = delta
+			if config.using_delta_delta:
+				feature_batch[batch_idx, 2, :, :length] = delta_delta
+
+		feature_batch = (feature_batch - self.mean) / self.std
+		return feature_batch
 
 if __name__ == "__main__":
 	try:
