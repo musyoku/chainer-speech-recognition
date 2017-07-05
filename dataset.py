@@ -6,6 +6,7 @@ import chainer
 import numpy as np
 import scipy.io.wavfile as wavfile
 import pickle
+import config
 from python_speech_features import logfbank
 from python_speech_features import fbank
 
@@ -424,6 +425,9 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 	current_num_data = 0
 	data_limit_exceeded = False
 	total_min = 0
+	statistics_denominator = 0
+	feature_mean = 0
+	feature_std = 0
 
 	def append_bucket(buckets, bucket_idx, data):
 		if len(buckets) <= bucket_idx:
@@ -451,6 +455,8 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			return False
 		file_index = buckets_file_indices[bucket_idx]
 		num_signals = len(buckets_signal[bucket_idx])
+		assert num_signals > 0
+
 		with open (os.path.join(cache_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_signals)), "wb") as f:
 			pickle.dump(buckets_signal[bucket_idx], f)
 		num_sentences = len(buckets_sentence[bucket_idx])
@@ -461,6 +467,29 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		buckets_sentence[bucket_idx] = []
 		buckets_file_indices[bucket_idx] += 1
 		return True
+
+	def compute_mean_and_std(bucket_idx):
+		num_signals = len(buckets_signal[bucket_idx])
+		assert num_signals > 0
+		mean = 0
+		std = 0
+
+		for signal in buckets_signal[bucket_idx]:
+			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
+			if logmel.shape[1] == 0:
+				continue
+			div = 1
+			if config.using_delta:
+				logmel = np.concatenate((logmel, delta), axis=1)
+				div += 1
+			if config.using_delta_delta:
+				logmel = np.concatenate((logmel, delta_delta), axis=1)
+				div += 1
+			logmel = np.reshape(logmel, (config.num_mel_filters, div, -1))
+			mean += np.mean(logmel, axis=2, keepdims=True) / num_signals
+			std += np.std(logmel, axis=2, keepdims=True) / num_signals
+
+		return mean, std
 
 	for wav_dir, trn_dir in zip(wav_paths, transcription_paths):
 		wav_fs = os.listdir(wav_dir)
@@ -568,6 +597,14 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 				if write_to_file:
 					sys.stdout.write("\r")
 					sys.stdout.write(stdout.CLEAR)
+					sys.stdout.write("Computing mean and std of bucket {} ...".format(bucket_idx))
+					sys.stdout.flush()
+					mean, std = compute_mean_and_std(bucket_idx)
+					feature_mean += mean
+					feature_std = std
+					statistics_denominator += 1
+					sys.stdout.write("\r")
+					sys.stdout.write(stdout.CLEAR)
 					sys.stdout.write("Writing bucket {} ...".format(bucket_idx))
 					sys.stdout.flush()
 					save_bucket(bucket_idx)
@@ -581,22 +618,33 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 	if data_limit_exceeded == False:
 		for bucket_idx, bucket in enumerate(buckets_signal):
 			if len(bucket) > 0:
+				mean, std = compute_mean_and_std(bucket_idx)
+				feature_mean += mean
+				feature_std = std
+				statistics_denominator += 1
 				if save_bucket(bucket_idx) == False:
 					num_unsaved_data = len(buckets_signal[bucket_idx])
 					print("bucket {} skipped. (#data={})".format(bucket_idx, num_unsaved_data))
 					current_num_data -= num_unsaved_data
 	print("total: {} hour - {} data".format(int(total_min / 60), current_num_data))
 
+	feature_mean /= statistics_denominator
+	feature_std /= statistics_denominator
+	print(feature_mean)
+	print(feature_std)
+	np.save(os.path.join(cache_path, "mean.npy"), feature_mean)
+	np.save(os.path.join(cache_path, "std.npy"), feature_std)
+
 
 wav_path_list = [
-	"/home/stark/sandbox/CSJ/WAV/core",
-	"/home/stark/sandbox/CSJ/WAV/noncore",
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/stark/sandbox/CSJ_/core",
-	"/home/stark/sandbox/CSJ_/noncore",
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/stark/sandbox/wav"
+cache_path = "/home/aibo/sandbox/wav"
 
 class Dataset(object):
 	def __init__(self, data_path, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0):
@@ -667,10 +715,9 @@ class Dataset(object):
 		self.total_groups = total_groups
 		self.total_buckets = total_buckets
 		self.bucket_distribution = np.asarray(buckets_num_group) / total_groups
+		self.cached_indices = []
 
 	def get_minibatch(self, batchsize=32, augmentation=False):
-		import time
-		current_time = time.time()
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
 		num_data = self.buckets_num_data[bucket_idx][group_idx]
@@ -765,8 +812,15 @@ class Dataset(object):
 			if len(sentence) > max_sentence_length:
 				max_sentence_length = len(sentence)
 
+			if logmel.shape[1] == 0:
+				pass
+
 		assert max_feature_length > 0
-		print(time.time() - current_time)
+
+		self.cached_indices.append((bucket_idx, group_idx))
+		if len(self.cached_indices) > self.num_signals_memory:
+			_bucket_idx, _group_idx = self.cached_indices.pop(0)
+			self.buckets_signal[_bucket_idx][_group_idx] = None
 
 if __name__ == "__main__":
 	try:
@@ -782,28 +836,11 @@ if __name__ == "__main__":
 	except:
 		pass
 
-	mean_filename = os.path.join(cache_path, "mean.npy")
-	std_filename = os.path.join(cache_path, "std.npy")
-
-
-
-	sampling_rate = 16000
-	frame_width = 0.032		# sec
-	frame_shift = 0.01		# sec
-	gpu_ids = [0, 1, 3]		# 複数GPUを使う場合
-	num_fft = int(sampling_rate * frame_width)
-	num_mel_filters = 40
-	chainer.global_config.sampling_rate = sampling_rate
-	chainer.global_config.frame_width = frame_width
-	chainer.global_config.frame_shift = frame_shift
-	chainer.global_config.num_fft = num_fft
-	chainer.global_config.num_mel_filters = num_mel_filters
-	chainer.global_config.window_func = lambda x:np.hanning(x)
-	chainer.global_config.using_delta = True
-	chainer.global_config.using_delta_delta = True
-	dataset = Dataset(cache_path)
-	dataset.get_minibatch()
-	raise Exception()
+	# dataset = Dataset(cache_path)
+	# for i in range(500):
+	# 	print(i)
+	# 	dataset.get_minibatch()
+	# raise Exception()
 
 	# すべての.wavを読み込み、一定の長さごとに保存
 	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000)
