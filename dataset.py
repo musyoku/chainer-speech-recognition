@@ -601,7 +601,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 					sys.stdout.flush()
 					mean, std = compute_mean_and_std(bucket_idx)
 					feature_mean += mean
-					feature_std = std
+					feature_std += std
 					statistics_denominator += 1
 					sys.stdout.write("\r")
 					sys.stdout.write(stdout.CLEAR)
@@ -620,7 +620,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			if len(bucket) > 0:
 				mean, std = compute_mean_and_std(bucket_idx)
 				feature_mean += mean
-				feature_std = std
+				feature_std += std
 				statistics_denominator += 1
 				if save_bucket(bucket_idx) == False:
 					num_unsaved_data = len(buckets_signal[bucket_idx])
