@@ -8,7 +8,9 @@ import numpy as np
 import chainer.functions as F
 from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
-from dataset import get_minibatch, get_vocab, load_buckets, get_duration_seconds
+import config
+from error import compute_error
+from dataset import Dataset, cache_path, get_vocab, AugmentationOption
 from model import load_model, save_model, build_model
 from ctc import connectionist_temporal_classification
 
@@ -67,181 +69,29 @@ def decay_learning_rate(opt, factor, final_value):
 		return
 	raise NotImplementedError()
 
-def compute_character_error_rate(r, h):
-	if len(r) == 0:
-		return len(h)
-	d = np.zeros((len(r) + 1) * (len(h) + 1), dtype=np.uint8).reshape((len(r) + 1, len(h) + 1))
-	for i in xrange(len(r) + 1):
-		for j in xrange(len(h) + 1):
-			if i == 0: d[0][j] = j
-			elif j == 0: d[i][0] = i
-	for i in xrange(1, len(r) + 1):
-		for j in xrange(1, len(h) + 1):
-			if r[i-1] == h[j-1]:
-				d[i][j] = d[i-1][j-1]
-			else:
-				substitute = d[i-1][j-1] + 1
-				insert = d[i][j-1] + 1
-				delete = d[i-1][j] + 1
-				d[i][j] = min(substitute, insert, delete)
-	return float(d[len(r)][len(h)]) / len(r)
-
 def formatted_error(error_values):
 	errors = []
 	for error in error_values:
 		errors.append("%.2f" % error)
 	return errors
 
-def compute_error(model, buckets_indices, buckets_feature, buckets_feature_length, buckets_sentence, buckets_batchsize, BLANK, mean_x_batch, stddev_x_batch, approximate=True):
-	errors = []
-	xp = model.xp
-	for bucket_idx in xrange(len(buckets_indices)):
-		data_indices = buckets_indices[bucket_idx]
-		batchsize = buckets_batchsize[bucket_idx]
-		feature_bucket = buckets_feature[bucket_idx]
-		feature_length_bucket = buckets_feature_length[bucket_idx]
-		sentence_bucket = buckets_sentence[bucket_idx]
-
-		total_iterations = 1 if approximate else int(math.ceil(len(data_indices) / batchsize))
-
-		if total_iterations == 1 and len(data_indices) < batchsize:
-			batchsize = len(data_indices)
-
-		sum_error = 0
-		for itr in xrange(1, total_iterations + 1):
-
-			x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, BLANK)
-			x_batch = (x_batch - mean_x_batch) / stddev_x_batch
-
-			if model.xp is cuda.cupy:
-				x_batch = cuda.to_gpu(x_batch.astype(np.float32))
-				t_batch = cuda.to_gpu(np.asarray(t_batch).astype(np.int32))
-				x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
-				t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
-
-			y_batch = model(x_batch, split_into_variables=False)
-			y_batch = xp.argmax(y_batch.data, axis=2)
-
-			for argmax_sequence, true_sequence in zip(y_batch, t_batch):
-				target_sequence = []
-				for token in true_sequence:
-					if token == BLANK:
-						continue
-					target_sequence.append(int(token))
-				pred_seqence = []
-				prev_token = BLANK
-				for token in argmax_sequence:
-					if token == BLANK:
-						prev_token = BLANK
-						continue
-					if token == prev_token:
-						continue
-					pred_seqence.append(int(token))
-					prev_token = token
-				# if approximate == True:
-				# 	print("true:", target_sequence, "pred:", pred_seqence)
-				error = compute_character_error_rate(target_sequence, pred_seqence)
-				sum_error += error
-
-
-			sys.stdout.write("\r" + stdout.CLEAR)
-			sys.stdout.write("\rComputing error - bucket {}/{} - iteration {}/{}".format(bucket_idx + 1, len(buckets_indices), itr, total_iterations))
-			sys.stdout.flush()
-			data_indices = np.roll(data_indices, batchsize)
-
-		errors.append(sum_error * 100.0 / batchsize / total_iterations)
-	return errors
-
 def main():
-	sampling_rate = 16000
-	frame_width = 0.032		# sec
-	frame_shift = 0.01		# sec
-	gpu_ids = [0, 1, 3]		# 複数GPUを使う場合
-	num_fft = int(sampling_rate * frame_width)
-	num_mel_filters = 40
-
-	chainer.global_config.sampling_rate = sampling_rate
-	chainer.global_config.frame_width = frame_width
-	chainer.global_config.frame_shift = frame_shift
-	chainer.global_config.num_fft = num_fft
-	chainer.global_config.num_mel_filters = num_mel_filters
-	chainer.global_config.window_func = lambda x:np.hanning(x)
-	chainer.global_config.using_delta = True
-	chainer.global_config.using_delta_delta = True
-
 	# データの読み込み
-	_buckets_feature, _buckets_feature_length, _buckets_sentence, mean_x_batch, stddev_x_batch = load_buckets(args.buckets_limit, args.data_limit)
+	vocab, vocab_inv, BLANK = get_vocab()
+	vocab_size = len(vocab)
+
+	dataset = Dataset(cache_path, args.buckets_limit, id_blank=BLANK)
+	dataset.dump_information()
+	augmentation = AugmentationOption()
+	augmentation.change_vocal_tract = False
+	augmentation.change_speech_rate = False
+	augmentation.add_noise = False
 
 	# ミニバッチを取れないものは除外
 	# for single GTX 1080
-	if args.architecture.startswith("zhang"):
-		batchsizes = [96, 96, 64, 64, 48, 32, 32, 32, 24, 24, 24, 16, 16, 16, 12, 12, 12, 12, 12]
-		batchsizes = [32, 24, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 6, 6, 6, 6, 6]
-	else:
-		batchsizes = [64, 64, 64, 64, 64, 64, 48, 32, 32, 32, 32, 32, 32, 16, 16, 16, 16, 12, 12]
-		batchsizes = [32, 32, 32, 24, 24, 24, 24, 16, 16, 16, 16, 16, 16, 8, 8, 8, 8, 6, 6]
-	batchsizes = batchsizes[:len(_buckets_feature)]
+	batchsizes = [32, 24, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 6, 6, 6, 6, 6]
 
-	buckets_feature = []
-	buckets_feature_length = []
-	buckets_sentence = []
-	buckets_batchsize = []
-
-	dataset_size = 0
-
-	for bucket_idx, (feature_bucket, batchsize) in enumerate(zip(_buckets_feature, batchsizes)):
-		if len(feature_bucket) < batchsize:
-			continue
-		if args.buckets_limit is not None and bucket_idx > args.buckets_limit:
-			continue
-		buckets_feature.append(_buckets_feature[bucket_idx])
-		buckets_feature_length.append(_buckets_feature_length[bucket_idx])
-		buckets_sentence.append(_buckets_sentence[bucket_idx])
-		buckets_batchsize.append(batchsize)
-		dataset_size += len(buckets_feature[-1])
-
-	# buckets_feature = [buckets_feature[13]]
-	# buckets_feature_length = [buckets_feature_length[13]]
-	# buckets_sentence = [buckets_sentence[13]]
-	# buckets_batchsize = [buckets_batchsize[13]]
-
-	buckets_size = len(buckets_feature)
-	vocab, vocab_inv, BLANK = get_vocab()
-	vocab_size = len(vocab)
-	print_bold("data	#")
-	print("audio	{}".format(dataset_size))
-	print("vocab	{}".format(vocab_size))
-
-	# 訓練データとテストデータに分ける
-	print_bold("bucket	#train	#dev	sec")
-	np.random.seed(args.seed)
-	buckets_indices_train = []
-	buckets_indices_dev = []
-	total_train = 0
-	total_dev = 0
-	for bucket_idx in xrange(buckets_size):
-		bucket = buckets_feature[bucket_idx]
-		bucket_size = len(bucket)
-		num_dev = int(bucket_size * args.dev_split)
-		indices = np.arange(0, bucket_size)
-		np.random.shuffle(indices)
-		indices_dev = indices[:num_dev]
-		indices_train = indices[num_dev:]
-		buckets_indices_train.append(indices_train)
-		buckets_indices_dev.append(indices_dev)
-		print("{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, len(indices_train), len(indices_dev), get_duration_seconds(bucket.shape[3])))
-		total_train += len(indices_train)
-		total_dev += len(indices_dev)
-	print("total	{:>6}	{:>4}".format(total_train, total_dev))
-
-	# バケットごとのデータ量の差を学習回数によって補正する
-	# データが多いバケットほど多くの学習（ミニバッチのサンプリング）を行う
-	required_interations = []
-	for bucket, batchsize in zip(buckets_indices_train, buckets_batchsize):
-		itr = int(math.ceil(len(bucket) / batchsize))
-		required_interations.append(itr)
-	total_iterations_train = sum(required_interations)
-	buckets_distribution = np.asarray(required_interations, dtype=float) / total_iterations_train
+	total_iterations_train = dataset.get_total_training_iterations(batchsizes)
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
@@ -285,19 +135,7 @@ def main():
 		with chainer.using_config("train", True):
 			for itr in xrange(1, total_iterations_train + 1):
 				try:
-					bucket_idx = int(np.random.choice(np.arange(len(buckets_indices_train)), size=1, p=buckets_distribution))
-					data_indices = buckets_indices_train[bucket_idx]
-					batchsize = buckets_batchsize[bucket_idx]
-					np.random.shuffle(data_indices)
-
-					feature_bucket = buckets_feature[bucket_idx]
-					feature_length_bucket = buckets_feature_length[bucket_idx]
-					sentence_bucket = buckets_sentence[bucket_idx]
-
-					x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, BLANK)
-
-					# 正規化
-					x_batch = (x_batch - mean_x_batch) / stddev_x_batch
+					x_batch, x_length_batch, t_batch, t_length_batch = dataset.get_minibatch(batchsizes, option=augmentation)
 
 					# GPU
 					if xp is cupy:
@@ -319,7 +157,7 @@ def main():
 					optimizer.update(lossfun=lambda: loss)
 
 				except Exception as e:
-					print(" ", bucket_idx,  e.message)
+					print(" ", str(e))
 
 				sum_loss += loss_value
 				sys.stdout.write("\r" + stdout.CLEAR)

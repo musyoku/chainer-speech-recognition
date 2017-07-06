@@ -2,14 +2,17 @@
 
 in progress ...
 
+## 注意
+
 データがメモリに乗り切らないので必要になった時にファイルから読み出すようになっています。
 
-そのためSSDに音声ファイルを置くことをおすすめします。
+そのため高速なSSDに音声ファイルを置き、Python 3の使用をおすすめします。
 
 ## Requirements
 
 - Python 2 or 3
 - Chainer 2+
+- CuPy
 - SciPy
 - [python_speech_features](https://github.com/jameslyons/python_speech_features)
 

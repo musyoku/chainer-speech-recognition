@@ -1,7 +1,7 @@
 # coding: utf-8
 from __future__ import division
 from __future__ import print_function
-import os, codecs, re, sys
+import os, codecs, re, sys, math
 import chainer
 import numpy as np
 import scipy.io.wavfile as wavfile
@@ -18,6 +18,9 @@ class stdout:
 	BOLD = "\033[1m"
 	END = "\033[0m"
 	CLEAR = "\033[2K"
+
+def print_bold(str):
+	print(stdout.BOLD + str + stdout.END)
 
 def get_vocab():
 	characters = [
@@ -55,49 +58,9 @@ def get_vocab():
 
 	return vocab, vocab_inv, id_blank
 
-def get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, id_blank):
-	assert len(data_indices) >= batchsize
-	config = chainer.config
-	indices = data_indices[:batchsize]
-	max_x_width = 0
-	max_t_width = 0
-
-	for data_idx in indices:
-		feature = feature_bucket[data_idx]
-		sentence = sentence_bucket[data_idx]
-		if len(sentence) > max_t_width:
-			max_t_width = len(sentence)
-		if feature.shape[2] > max_x_width:
-			max_x_width = feature.shape[2]
-
-	x_batch = np.zeros((batchsize, 3, config.num_mel_filters, max_x_width), dtype=np.float32)
-	t_batch = np.full((batchsize, max_t_width), id_blank, dtype=np.int32)
-	x_valid_length = []
-	t_valid_length = []
-
-	for batch_idx, data_idx in enumerate(indices):
-		feature = feature_bucket[data_idx]
-		sentence = sentence_bucket[data_idx]
-		x_length = feature_length_bucket[data_idx]
-		t_length = len(sentence)
-
-		# x
-		x_batch[batch_idx, :, :, :x_length] = feature[..., :x_length]
-		x_valid_length.append(x_length)
-
-		# CTCが適用可能かチェック
-		num_trans_same_label = np.count_nonzero(sentence == np.roll(sentence, 1))
-		required_length = t_length * 2 + 1 + num_trans_same_label
-		if x_length < required_length:
-			possibole_t_length = (x_length - num_trans_same_label - 1) // 2
-			sentence = sentence[:possibole_t_length]
-			t_length = len(sentence)
-
-		# t
-		t_batch[batch_idx, :t_length] = sentence
-		t_valid_length.append(t_length)
-
-	return x_batch, x_valid_length, t_batch, t_valid_length
+def get_bucket_idx(signal, sampling_rate=16000, split_sec=0.5):
+	divider = sampling_rate * split_sec
+	return int(len(signal) // divider)
 
 def extract_features(signal, sampling_rate=16000, num_fft=512, frame_width=0.032, frame_shift=0.01, num_mel_filters=40, window_func=lambda x:np.hanning(x), using_delta=True, using_delta_delta=True):
 	# メルフィルタバンク出力の対数を計算
@@ -115,300 +78,6 @@ def extract_features(signal, sampling_rate=16000, num_fft=512, frame_width=0.032
 	delta_delta = delta_delta[:-2].T if using_delta_delta else None
 
 	return logmel, delta, delta_delta
-
-def load_audio_features_and_transcriptions(wav_paths, transcription_paths, buckets_limit, data_limit):
-	assert len(wav_paths) > 0
-	assert len(transcription_paths) > 0
-
-	config = chainer.config
-	vocab = get_vocab()[0]
-	dataset = []
-	max_sentence_length = 0
-	max_logmel_length = 0
-
-	for wav_dir, trn_dir in zip(wav_paths, transcription_paths):
-		if data_limit is not None and len(dataset) > data_limit:
-			break
-		wav_fs = os.listdir(wav_dir)
-		trn_fs = os.listdir(trn_dir)
-		wav_fs.sort()
-		trn_fs.sort()
-		assert len(wav_fs) == len(trn_fs)
-
-		for data_idx, (wav_filename, trn_filename) in enumerate(zip(wav_fs, trn_fs)):
-			if data_limit is not None and len(dataset) > data_limit:
-				break
-			wav_id = re.sub(r"\..+$", "", wav_filename)
-			trn_id = re.sub(r"\..+$", "", trn_filename)
-			if wav_id != trn_id:
-				raise Exception("{} != {}".format(wav_id, trn_id))
-
-			# wavの読み込み
-			try:
-				sampling_rate, audio = wavfile.read(os.path.join(wav_dir, wav_filename))
-			except KeyboardInterrupt:
-				exit()
-			except:
-				print("{} をスキップしました（読み込みできません）".format(wav_filename))
-				continue
-
-			sys.stdout.write("\r")
-			sys.stdout.write(stdout.CLEAR)
-			sys.stdout.write("loading {} ({}/{}) ... shape={}, rate={}, min={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(audio.size / sampling_rate / 60)))
-			sys.stdout.flush()
-
-			# 転記の読み込み
-			batch = []
-			with codecs.open(os.path.join(trn_dir, trn_filename), "r", "utf-8") as f:
-				for data in f:
-					period_str, channel, sentence = data.split(":")
-					period = period_str.split("-")
-					start_sec, end_sec = float(period[0]), float(period[1])
-					start_frame = int(start_sec * sampling_rate)
-					end_frame = int(end_sec * sampling_rate)
-
-					assert start_frame <= len(audio)
-					assert end_frame <= len(audio)
-
-					signal = audio[start_frame:end_frame]
-
-					assert len(signal) == end_frame - start_frame
-
-					# channelに従って選択
-					if signal.ndim == 2:
-						if channel == "S":	# 両方に含まれる場合
-							signal = signal[:, 0]
-						elif channel == "L":
-							signal = signal[:, 0]
-						elif channel == "R":
-							signal = signal[:, 1]
-						else:
-							raise Exception()
-
-					# 文字IDに変換
-					char_id_sequence = []
-					sentence = sentence.strip()
-					for char in sentence:
-						if char not in vocab:
-							continue
-						char_id = vocab[char]
-						char_id_sequence.append(char_id)
-
-					batch.append((signal, char_id_sequence))
-
-			# 信号長と転記文字列長の不自然な部分を検出
-			num_points_per_character = 0	# 1文字あたりの信号の数
-			for signal, char_id_sequence in batch:
-				num_points_per_character += len(signal) / len(char_id_sequence)
-			num_points_per_character /= len(signal)
-
-			accept_rate = 0.4	# ズレの割合がこれ以下なら教師データに誤りが含まれている可能性があるので目視で確認すべき
-			if trn_filename == "M03F0017.trn":	# CSJのこのファイルだけ異常な早口がある
-				accept_rate = 0.05
-			for idx, (signal, char_id_sequence) in enumerate(batch):
-				error = abs(len(signal) - num_points_per_character * len(char_id_sequence))
-				rate = error / len(signal)
-				if rate < accept_rate:
-					raise Exception(len(signal), len(char_id_sequence), num_points_per_character, rate, trn_filename, idx + 1)
-			
-				logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
-				bucket_idx = get_bucket_idx(logmel.shape[1])
-				if bucket_idx < buckets_limit:
-					dataset.append((char_id_sequence, logmel, delta, delta_delta))
-					if len(char_id_sequence) > max_sentence_length:
-						max_sentence_length = len(char_id_sequence)
-					if logmel.shape[1] > max_logmel_length:
-						max_logmel_length = logmel.shape[1]
-
-	return dataset, max_sentence_length, max_logmel_length
-
-def get_bucket_idx(signal, sampling_rate=16000, split_sec=0.5):
-	divider = sampling_rate * split_sec
-	return int(len(signal) // divider)
-
-def get_duration_seconds(length):
-	config = chainer.config
-	return length * config.frame_shift
-
-def load_buckets(buckets_limit, data_limit):
-	if buckets_limit is not None:
-		assert buckets_limit > 0
-	if data_limit is not None:
-		assert data_limit > 0
-
-	wav_paths = [
-		"/home/aibo/sandbox/CSJ/WAV/core",
-	]
-	transcription_paths = [
-		"/home/aibo/sandbox/CSJ_/core",
-	]
-	data_cache_path = "/home/aibo/sandbox/cache"
-
-	mean_filename = os.path.join(data_cache_path, "mean.npy")
-	std_filename = os.path.join(data_cache_path, "std.npy")	
-
-	mean_x_batch = None
-	stddev_x_batch = None
-
-	# キャッシュが存在するか調べる
-	cache_available = True
-	for bucket_idx in xrange(buckets_limit):
-		if os.path.isfile(os.path.join(data_cache_path, "feature_%d.npy" % bucket_idx)) == False:
-			cache_available = False
-			break
-		if os.path.isfile(os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx)) == False:
-			cache_available = False
-			break
-		if os.path.isfile(os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx)) == False:
-			cache_available = False
-			break
-	if os.path.isfile(mean_filename) == False:
-		cache_available = False
-	if os.path.isfile(std_filename) == False:
-		cache_available = False
-
-	if cache_available:
-		print("loading dataset from cache ...")
-		
-		buckets_feature = []
-		buckets_feature_length = []
-		buckets_sentence = []
-
-		for bucket_idx in xrange(buckets_limit):
-			feature_batch = np.load(os.path.join(data_cache_path, "feature_%d.npy" % bucket_idx))
-			with open (os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx), "rb") as f:
-				sentence_batch = pickle.load(f)
-			with open (os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx), "rb") as f:
-				feature_length_batch = pickle.load(f)
-
-			buckets_feature.append(feature_batch)
-			buckets_feature_length.append(feature_length_batch)
-			buckets_sentence.append(sentence_batch)
-
-		mean_x_batch = np.load(mean_filename)
-		stddev_x_batch = np.load(std_filename)
-
-	else:
-		dataset, max_sentence_length, max_logmel_length = load_audio_features_and_transcriptions(wav_paths, transcription_paths, buckets_limit, data_limit)
-
-		if data_limit is not None:
-			dataset = dataset[:data_limit]
-
-		# 読み込んだデータをキャッシュ
-		config = chainer.config
-		try:
-			os.mkdir(data_cache_path)
-		except:
-			pass
-
-		# 必要なバケツの数を特定
-		buckets_length = 0
-		for idx, data in enumerate(dataset):
-			sentence, logmel, delta, delta_delta = data
-			assert logmel.shape[1] == delta.shape[1]
-			assert delta.shape[1] == delta_delta.shape[1]
-			audio_length = logmel.shape[1]
-			bucket_idx = get_bucket_idx(audio_length)
-			if bucket_idx > buckets_length:
-				buckets_length = bucket_idx
-		buckets_length += 1
-		if buckets_limit is not None:
-			buckets_length = buckets_limit if buckets_length > buckets_limit else buckets_length
-
-		# バケツ中のデータの個数を特定
-		buckets_volume = [0] * buckets_length
-
-		# バケツ中のデータの最大長を特定
-		valid_dataset_size = 0
-		max_feature_length_for_bucket = [0] * buckets_length
-		max_sentence_length_for_bucket = [0] * buckets_length
-		for idx, data in enumerate(dataset):
-			sentence, logmel, delta, delta_delta = data
-			feature_length = logmel.shape[1]
-			sentence_length = len(sentence)
-			bucket_idx = get_bucket_idx(feature_length)
-			if bucket_idx >= buckets_length:
-				continue
-			buckets_volume[bucket_idx] += 1
-			valid_dataset_size += 1
-			max_feature_length_for_bucket[bucket_idx] = BUCKET_THRESHOLD * (bucket_idx + 1) - 1
-			assert feature_length <= max_feature_length_for_bucket[bucket_idx]
-			if sentence_length > max_sentence_length_for_bucket[bucket_idx]:
-				max_sentence_length_for_bucket[bucket_idx] = sentence_length
-
-		# データの平均と標準偏差
-		mean_x_batch = 0
-		stddev_x_batch = 0
-
-		# バケツにデータを格納
-		buckets_feature = [None] * buckets_length
-		buckets_feature_length = [None] * buckets_length
-		buckets_sentence = [None] * buckets_length
-
-		for bucket_idx in xrange(buckets_length):
-			num_data = buckets_volume[bucket_idx]
-			max_feature_length = max_feature_length_for_bucket[bucket_idx]
-			buckets_feature[bucket_idx] = np.zeros((num_data, 3, config.num_mel_filters, max_feature_length), dtype=np.float32)
-			buckets_feature_length[bucket_idx] = []
-			buckets_sentence[bucket_idx] = []
-
-		for idx, data in enumerate(dataset):
-			if idx % 100 == 0:
-				sys.stdout.write("\r")
-				sys.stdout.write(stdout.CLEAR)
-				sys.stdout.write("creating buckets ({}/{}) ... ".format(idx + 1, len(dataset)))
-				sys.stdout.flush()
-
-			sentence, logmel, delta, delta_delta = data
-			feature_length = logmel.shape[1]
-			sentence_length = len(sentence)
-			bucket_idx = get_bucket_idx(feature_length)
-			if bucket_idx >= buckets_length:
-				continue
-
-			buckets_volume[bucket_idx] -= 1
-			insert_idx = buckets_volume[bucket_idx]
-
-			# 音響特徴量
-			feature_batch = buckets_feature[bucket_idx]
-			feature_batch[insert_idx, 0, :, :feature_length] = logmel			
-			feature_batch[insert_idx, 1, :, :feature_length] = delta			
-			feature_batch[insert_idx, 2, :, :feature_length] = delta_delta
-
-			# 平均と標準偏差を計算
-			mean_x_batch += np.mean(feature_batch[insert_idx, :, :, :feature_length], axis=2, keepdims=True) / valid_dataset_size
-			stddev_x_batch += np.std(feature_batch[insert_idx, :, :, :feature_length], axis=2, keepdims=True) / valid_dataset_size	
-
-			# 書き起こし
-			buckets_sentence[bucket_idx].append(sentence)
-
-			# 音響特徴量の有効長
-			buckets_feature_length[bucket_idx].append(feature_length)
-
-		# ディスクにキャッシュ
-		for bucket_idx in xrange(buckets_length):
-			feature_batch = buckets_feature[bucket_idx]
-			feature_length_batch = buckets_feature_length[bucket_idx]
-			sentence_batch = buckets_sentence[bucket_idx]
-
-			# feature_batchは逆順になっているので注意
-			feature_length_batch.reverse()
-			sentence_batch.reverse()
-
-			np.save(os.path.join(data_cache_path, "feature_%d.npy" % bucket_idx), feature_batch)
-			with open (os.path.join(data_cache_path, "feature_length_%d.npy" % bucket_idx), "wb") as f:
-				pickle.dump(feature_length_batch, f)
-			with open (os.path.join(data_cache_path, "sentence_%d.npy" % bucket_idx), "wb") as f:
-				pickle.dump(sentence_batch, f)
-
-		np.save(mean_filename, mean_x_batch)
-		np.save(std_filename, stddev_x_batch)
-
-	# reshape
-	mean_x_batch = mean_x_batch[None, ...]
-	stddev_x_batch = stddev_x_batch[None, ...]
-
-	return buckets_feature, buckets_feature_length, buckets_sentence, mean_x_batch, stddev_x_batchc
 
 def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, data_limit, num_signals_per_file=1000):
 	assert len(wav_paths) > 0
@@ -436,7 +105,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		buckets[bucket_idx].append(data)
 
 	def add_to_bukcet(signal, sentence):
-		bucket_idx = get_bucket_idx(signal)
+		bucket_idx = get_bucket_idx(signal, config.sampling_rate, config.bucket_split_sec)
 		# add signal
 		append_bucket(buckets_signal, bucket_idx, signal)
 		# add sentence
@@ -485,7 +154,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			if config.using_delta_delta:
 				logmel = np.concatenate((logmel, delta_delta), axis=1)
 				div += 1
-			logmel = np.reshape(logmel, (config.num_mel_filters, div, -1)).swapaxes(1, 2)
+			logmel = np.reshape(logmel, (config.num_mel_filters, div, -1))
 			mean += np.mean(logmel, axis=2, keepdims=True) / num_signals
 			std += np.std(logmel, axis=2, keepdims=True) / num_signals
 
@@ -630,32 +299,43 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 
 	feature_mean /= statistics_denominator
 	feature_std /= statistics_denominator
-	print(feature_mean)
-	print(feature_std)
-	print(feature_mean.shape)
-	print(feature_std.shape)
-	np.save(os.path.join(cache_path, "mean.npy"), feature_mean)
-	np.save(os.path.join(cache_path, "std.npy"), feature_std)
+	np.save(os.path.join(cache_path, "mean.npy"), feature_mean.swapaxes(0, 1))
+	np.save(os.path.join(cache_path, "std.npy"), feature_std.swapaxes(0, 1))
 
 
 wav_path_list = [
-	"/home/stark/sandbox/CSJ/WAV/core",
-	"/home/stark/sandbox/CSJ/WAV/noncore",
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/stark/sandbox/CSJ_/core",
-	"/home/stark/sandbox/CSJ_/noncore",
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/stark/sandbox/wav"
+cache_path = "/home/aibo/sandbox/wav"
+
+class AugmentationOption():
+	def __init__(self):
+		self.change_vocal_tract = False
+		self.change_speech_rate = False
+		self.add_noise = False
+
+	def using_augmentation(self):
+		if self.change_vocal_tract:
+			return True
+		if self.change_speech_rate:
+			return True
+		if self.add_noise:
+			return True
+		return False
 
 class Dataset(object):
-	def __init__(self, data_path, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0):
+	def __init__(self, data_path, buckets_limit=None, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0, id_blank=0):
 		self.num_signals_per_file = num_signals_per_file
 		self.num_signals_memory = num_buckets_to_store_memory
 		self.dev_split = dev_split
 		self.data_path = data_path
-
-
+		self.buckets_limit = buckets_limit
+		self.id_blank = 0
 
 		signal_path = os.path.join(data_path, "signal")
 		sentence_path = os.path.join(data_path, "sentence")
@@ -702,6 +382,10 @@ class Dataset(object):
 					buckets_num_data[bucket_idx].append(0)
 				buckets_num_data[bucket_idx][group_idx] = num_data
 
+		if buckets_limit is not None:
+			buckets_signal = buckets_signal[:buckets_limit]
+			buckets_num_data = buckets_num_data[:buckets_limit]
+
 		buckets_num_group = []
 		for bucket in buckets_signal:
 			buckets_num_group.append(len(bucket))
@@ -736,7 +420,34 @@ class Dataset(object):
 		self.bucket_distribution = np.asarray(buckets_num_group) / total_groups
 		self.cached_indices = []
 
-	def get_minibatch(self, batchsize=32, augmentation=False):
+	def get_total_training_iterations(self, batchsizes):
+		num_buckets = len(self.buckets_signal)
+		batchsizes = batchsizes[:num_buckets]
+		itr = 0
+		for indices_group_train, batchsize in zip(self.buckets_indices_train, batchsizes):
+			itr += int(math.ceil(len(indices_group_train) / batchsize))
+		return itr
+
+	def dump_information(self):
+		print_bold("bucket	#train	#dev	sec")
+		total_train = 0
+		total_dev = 0
+		config = chainer.config
+		for bucket_idx, (indices_group_train, indices_group_dev) in enumerate(zip(self.buckets_indices_train, self.buckets_indices_dev)):
+			if self.buckets_limit is not None and bucket_idx >= self.buckets_limit:
+				break
+			num_train = 0
+			num_dev = 0
+			for indices_train in indices_group_train:
+				total_train += len(indices_train)
+				num_train += len(indices_train)
+			for indices_dev in indices_group_dev:
+				total_dev += len(indices_dev)
+				num_dev += len(indices_dev)
+			print("{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, num_train, num_dev, config.bucket_split_sec * (bucket_idx + 1)))
+		print("total	{:>6}	{:>4}".format(total_train, total_dev))
+
+	def get_minibatch(self, batchsizes, option=None):
 		config = chainer.config
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
@@ -756,6 +467,8 @@ class Dataset(object):
 				
 		indices = self.buckets_indices_train[bucket_idx][group_idx]
 		np.random.shuffle(indices)
+
+		batchsize = batchsizes[bucket_idx]
 		batchsize = len(indices) if batchsize > len(indices) else batchsize
 		indices = indices[:batchsize]
 		signals_batch = []
@@ -763,13 +476,14 @@ class Dataset(object):
 		max_sentence_length = 0
 
 		extracted_features = []
+		sentences = []
 
 		for data_idx in indices:
 			signal = signal_list[data_idx]
 			sentence = sentence_list[data_idx]
 
 			# データ拡大
-			if augmentation:
+			if option is not None and option.using_augmentation():
 				signal = np.asarray(signal, dtype=np.float64)
 				_f0, t = pw.dio(signal, config.sampling_rate)    		# raw pitch extractor
 				f0 = pw.stonemask(signal, _f0, t, config.sampling_rate) # pitch refinement
@@ -841,6 +555,7 @@ class Dataset(object):
 				continue
 
 			extracted_features.append((logmel, delta, delta_delta))
+			sentences.append(sentence)
 
 		assert max_feature_length > 0
 
@@ -857,18 +572,37 @@ class Dataset(object):
 		if config.using_delta_delta:
 			channels += 1
 		height = config.num_mel_filters
-		feature_batch = np.zeros((batchsize, channels, height, max_feature_length), dtype=np.float32)
 
-		for batch_idx, (logmel, delta, delta_delta) in enumerate(extracted_features):
-			length = logmel.shape[1]
-			feature_batch[batch_idx, 0, :, :length] = logmel
+		x_batch = np.zeros((batchsize, channels, height, max_feature_length), dtype=np.float32)
+		t_batch = np.full((batchsize, max_sentence_length), self.id_blank, dtype=np.int32)
+		x_valid_length = []
+		t_valid_length = []
+
+		for batch_idx, ((logmel, delta, delta_delta), sentence) in enumerate(zip(extracted_features, sentences)):
+			x_length = logmel.shape[1]
+			t_length = len(sentence)
+
+			x_batch[batch_idx, 0, :, :x_length] = logmel
 			if config.using_delta:
-				feature_batch[batch_idx, 1, :, :length] = delta
+				x_batch[batch_idx, 1, :, :x_length] = delta
 			if config.using_delta_delta:
-				feature_batch[batch_idx, 2, :, :length] = delta_delta
+				x_batch[batch_idx, 2, :, :x_length] = delta_delta
+			x_valid_length.append(x_length)
 
-		feature_batch = (feature_batch - self.mean) / self.std
-		return feature_batch
+			# CTCが適用可能かチェック
+			num_trans_same_label = np.count_nonzero(sentence == np.roll(sentence, 1))
+			required_length = t_length * 2 + 1 + num_trans_same_label
+			if x_length < required_length:
+				possibole_t_length = (x_length - num_trans_same_label - 1) // 2
+				sentence = sentence[:possibole_t_length]
+				t_length = len(sentence)
+
+			# t
+			t_batch[batch_idx, :t_length] = sentence
+			t_valid_length.append(t_length)
+
+		x_batch = (x_batch - self.mean) / self.std
+		return x_batch, x_valid_length, t_batch, t_valid_length
 
 if __name__ == "__main__":
 	try:
@@ -884,11 +618,12 @@ if __name__ == "__main__":
 	except:
 		pass
 
-	# dataset = Dataset(cache_path)
-	# for i in range(500):
-	# 	print(i)
-	# 	dataset.get_minibatch()
-	# raise Exception()
+	dataset = Dataset(cache_path, buckets_limit=10)
+	dataset.dump_information()
+	for i in range(500):
+		print(i)
+		dataset.get_minibatch()
+	raise Exception()
 
 	# すべての.wavを読み込み、一定の長さごとに保存
 	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000)
