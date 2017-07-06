@@ -4,12 +4,12 @@ def compute_character_error_rate(r, h):
 	if len(r) == 0:
 		return len(h)
 	d = np.zeros((len(r) + 1) * (len(h) + 1), dtype=np.uint8).reshape((len(r) + 1, len(h) + 1))
-	for i in xrange(len(r) + 1):
-		for j in xrange(len(h) + 1):
+	for i in range(len(r) + 1):
+		for j in range(len(h) + 1):
 			if i == 0: d[0][j] = j
 			elif j == 0: d[i][0] = i
-	for i in xrange(1, len(r) + 1):
-		for j in xrange(1, len(h) + 1):
+	for i in range(1, len(r) + 1):
+		for j in range(1, len(h) + 1):
 			if r[i-1] == h[j-1]:
 				d[i][j] = d[i-1][j-1]
 			else:
@@ -19,10 +19,33 @@ def compute_character_error_rate(r, h):
 				d[i][j] = min(substitute, insert, delete)
 	return float(d[len(r)][len(h)]) / len(r)
 
+def compute_minibatch_error(y_batch, t_batch, BLANK):
+	sum_error = 0
+
+	for argmax_sequence, true_sequence in zip(y_batch, t_batch):
+		target_sequence = []
+		for token in true_sequence:
+			if token == BLANK:
+				continue
+			target_sequence.append(int(token))
+		pred_seqence = []
+		prev_token = BLANK
+		for token in argmax_sequence:
+			if token == BLANK:
+				prev_token = BLANK
+				continue
+			if token == prev_token:
+				continue
+			pred_seqence.append(int(token))
+			prev_token = token
+		sum_error += compute_character_error_rate(target_sequence, pred_seqence)
+
+	return sum_error / len(y_batch)
+
 def compute_error(model, buckets_indices, buckets_feature, buckets_feature_length, buckets_sentence, buckets_batchsize, BLANK, mean_x_batch, stddev_x_batch, approximate=True):
 	errors = []
 	xp = model.xp
-	for bucket_idx in xrange(len(buckets_indices)):
+	for bucket_idx in range(len(buckets_indices)):
 		data_indices = buckets_indices[bucket_idx]
 		batchsize = buckets_batchsize[bucket_idx]
 		feature_bucket = buckets_feature[bucket_idx]
@@ -35,7 +58,7 @@ def compute_error(model, buckets_indices, buckets_feature, buckets_feature_lengt
 			batchsize = len(data_indices)
 
 		sum_error = 0
-		for itr in xrange(1, total_iterations + 1):
+		for itr in range(1, total_iterations + 1):
 
 			x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, BLANK)
 			x_batch = (x_batch - mean_x_batch) / stddev_x_batch

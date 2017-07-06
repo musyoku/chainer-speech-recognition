@@ -7,6 +7,7 @@ import numpy as np
 import scipy.io.wavfile as wavfile
 import pickle
 import config
+from chainer import cuda
 from python_speech_features import logfbank
 from python_speech_features import fbank
 
@@ -410,6 +411,7 @@ class Dataset(object):
 			buckets_indices_dev.append(indices_dev)
 
 		self.buckets_signal = buckets_signal
+		self.buckets_sentence = buckets_sentence
 		self.buckets_num_group = buckets_num_group
 		self.buckets_num_data = buckets_num_data
 		self.buckets_indices_train = buckets_indices_train
@@ -425,7 +427,8 @@ class Dataset(object):
 		batchsizes = batchsizes[:num_buckets]
 		itr = 0
 		for indices_group_train, batchsize in zip(self.buckets_indices_train, batchsizes):
-			itr += int(math.ceil(len(indices_group_train) / batchsize))
+			for indices_train in indices_group_train:
+				itr += int(math.ceil(len(indices_train) / batchsize))
 		return itr
 
 	def dump_information(self):
@@ -447,7 +450,7 @@ class Dataset(object):
 			print("{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, num_train, num_dev, config.bucket_split_sec * (bucket_idx + 1)))
 		print("total	{:>6}	{:>4}".format(total_train, total_dev))
 
-	def get_minibatch(self, batchsizes, option=None):
+	def get_minibatch(self, batchsizes, option=None, gpu=True):
 		config = chainer.config
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
@@ -459,7 +462,7 @@ class Dataset(object):
 				signal_list = pickle.load(f)
 				self.buckets_signal[bucket_idx][group_idx] = signal_list
 
-		sentence_list = self.buckets_signal[bucket_idx][group_idx]
+		sentence_list = self.buckets_sentence[bucket_idx][group_idx]
 		if sentence_list is None:
 			with open (os.path.join(self.data_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
 				sentence_list = pickle.load(f)
@@ -575,8 +578,8 @@ class Dataset(object):
 
 		x_batch = np.zeros((batchsize, channels, height, max_feature_length), dtype=np.float32)
 		t_batch = np.full((batchsize, max_sentence_length), self.id_blank, dtype=np.int32)
-		x_valid_length = []
-		t_valid_length = []
+		x_length_batch = []
+		t_length_batch = []
 
 		for batch_idx, ((logmel, delta, delta_delta), sentence) in enumerate(zip(extracted_features, sentences)):
 			x_length = logmel.shape[1]
@@ -587,7 +590,7 @@ class Dataset(object):
 				x_batch[batch_idx, 1, :, :x_length] = delta
 			if config.using_delta_delta:
 				x_batch[batch_idx, 2, :, :x_length] = delta_delta
-			x_valid_length.append(x_length)
+			x_length_batch.append(x_length)
 
 			# CTCが適用可能かチェック
 			num_trans_same_label = np.count_nonzero(sentence == np.roll(sentence, 1))
@@ -599,10 +602,18 @@ class Dataset(object):
 
 			# t
 			t_batch[batch_idx, :t_length] = sentence
-			t_valid_length.append(t_length)
+			t_length_batch.append(t_length)
 
 		x_batch = (x_batch - self.mean) / self.std
-		return x_batch, x_valid_length, t_batch, t_valid_length
+
+		# GPU
+		if gpu:
+			x_batch = cuda.to_gpu(x_batch.astype(np.float32))
+			t_batch = cuda.to_gpu(t_batch.astype(np.int32))
+			x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
+			t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
+
+		return x_batch, x_length_batch, t_batch, t_length_batch
 
 if __name__ == "__main__":
 	try:
@@ -617,13 +628,6 @@ if __name__ == "__main__":
 		os.mkdir(os.path.join(cache_path, "sentence"))
 	except:
 		pass
-
-	dataset = Dataset(cache_path, buckets_limit=10)
-	dataset.dump_information()
-	for i in range(500):
-		print(i)
-		dataset.get_minibatch()
-	raise Exception()
 
 	# すべての.wavを読み込み、一定の長さごとに保存
 	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000)

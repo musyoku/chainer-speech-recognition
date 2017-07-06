@@ -9,7 +9,7 @@ import chainer.functions as F
 from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
 import config
-from error import compute_error
+from error import compute_minibatch_error
 from dataset import Dataset, cache_path, get_vocab, AugmentationOption
 from model import load_model, save_model, build_model
 from ctc import connectionist_temporal_classification
@@ -135,14 +135,7 @@ def main():
 		with chainer.using_config("train", True):
 			for itr in xrange(1, total_iterations_train + 1):
 				try:
-					x_batch, x_length_batch, t_batch, t_length_batch = dataset.get_minibatch(batchsizes, option=augmentation)
-
-					# GPU
-					if xp is cupy:
-						x_batch = cuda.to_gpu(x_batch.astype(np.float32))
-						t_batch = cuda.to_gpu(t_batch.astype(np.int32))
-						x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
-						t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
+					x_batch, x_length_batch, t_batch, t_length_batch = dataset.get_minibatch(batchsizes, option=augmentation, gpu=True)
 
 					# 誤差の計算
 					y_batch = model(x_batch)	# list of variables
@@ -170,8 +163,10 @@ def main():
 
 		# バリデーション
 		with chainer.using_config("train", False):
-			train_error = compute_error(model, buckets_indices_train, buckets_feature, buckets_feature_length, buckets_sentence, buckets_batchsize, BLANK, mean_x_batch, stddev_x_batch, approximate=True)
-			dev_error = compute_error(model, buckets_indices_dev, buckets_feature, buckets_feature_length, buckets_sentence, buckets_batchsize, BLANK, mean_x_batch, stddev_x_batch, approximate=False)
+			x_batch, x_length_batch, t_batch, t_length_batch = dataset.get_minibatch(batchsizes, option=augmentation, gpu=True)
+			y_batch = model(x_batch, split_into_variables=False)
+			y_batch = xp.argmax(y_batch.data, axis=2)
+			train_error = compute_minibatch_error(y_batch, t_batch, BLANK) * 100
 
 		sys.stdout.write(stdout.MOVE)
 		sys.stdout.write(stdout.LEFT)
@@ -182,8 +177,7 @@ def main():
 		print("Epoch {} done in {} min - total {} min".format(epoch, int(elapsed_time / 60), int(total_time / 60)))
 		sys.stdout.write(stdout.CLEAR)
 		print("	loss:", sum_loss / total_iterations_train)
-		print("	CER (train):	{:.2f}	{}".format(sum(train_error) / len(train_error) , formatted_error(train_error)))
-		print("	CER (dev):	{:.2f}	{}".format(sum(dev_error) / len(dev_error) , formatted_error(dev_error)))
+		print("	CER (train):	{:.2f}".format(train_error))
 		print("	lr: {}".format(get_current_learning_rate(optimizer)))
 
 		# 学習率の減衰
