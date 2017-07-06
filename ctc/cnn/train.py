@@ -92,6 +92,7 @@ def main():
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	total_iterations_train = dataset.get_total_training_iterations(batchsizes)
+	total_iterations_train = 2
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
@@ -163,7 +164,7 @@ def main():
 
 		# バリデーション
 		with chainer.using_config("train", False):
-			x_batch, x_length_batch, t_batch, t_length_batch = dataset.get_minibatch(batchsizes, option=augmentation, gpu=True)
+			x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = dataset.get_minibatch(batchsizes, option=augmentation, gpu=True)
 			y_batch = model(x_batch, split_into_variables=False)
 			y_batch = xp.argmax(y_batch.data, axis=2)
 			train_error = compute_minibatch_error(y_batch, t_batch, BLANK) * 100
