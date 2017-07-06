@@ -613,7 +613,7 @@ class Dataset(object):
 			x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
 			t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
-		return x_batch, x_length_batch, t_batch, t_length_batch
+		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx
 
 if __name__ == "__main__":
 	try:

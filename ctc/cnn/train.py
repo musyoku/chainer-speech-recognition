@@ -88,8 +88,8 @@ def main():
 	augmentation.add_noise = False
 
 	# ミニバッチを取れないものは除外
-	# for single GTX 1080
-	batchsizes = [32, 24, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 6, 6, 6, 6, 6]
+	# GTX 1080 1台基準
+	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	total_iterations_train = dataset.get_total_training_iterations(batchsizes)
 
@@ -135,7 +135,7 @@ def main():
 		with chainer.using_config("train", True):
 			for itr in xrange(1, total_iterations_train + 1):
 				try:
-					x_batch, x_length_batch, t_batch, t_length_batch = dataset.get_minibatch(batchsizes, option=augmentation, gpu=True)
+					x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = dataset.get_minibatch(batchsizes, option=augmentation, gpu=True)
 
 					# 誤差の計算
 					y_batch = model(x_batch)	# list of variables
@@ -150,7 +150,7 @@ def main():
 					optimizer.update(lossfun=lambda: loss)
 
 				except Exception as e:
-					print(" ", str(e))
+					print(" ", bucket_idx, str(e))
 
 				sum_loss += loss_value
 				sys.stdout.write("\r" + stdout.CLEAR)
