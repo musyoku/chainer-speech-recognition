@@ -92,7 +92,6 @@ def main():
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	total_iterations_train = dataset.get_total_training_iterations(batchsizes)
-	total_iterations_train = 2
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
