@@ -49,22 +49,22 @@ def get_optimizer(name, lr, momentum):
 def decay_learning_rate(opt, factor, final_value):
 	if isinstance(opt, optimizers.NesterovAG):
 		if opt.lr <= final_value:
-			return
+			return final_value
 		opt.lr *= factor
 		return
 	if isinstance(opt, optimizers.SGD):
 		if opt.lr <= final_value:
-			return
+			return final_value
 		opt.lr *= factor
 		return
 	if isinstance(opt, optimizers.MomentumSGD):
 		if opt.lr <= final_value:
-			return
+			return final_value
 		opt.lr *= factor
 		return
 	if isinstance(opt, optimizers.Adam):
 		if opt.alpha <= final_value:
-			return
+			return final_value
 		opt.alpha *= factor
 		return
 	raise NotImplementedError()
