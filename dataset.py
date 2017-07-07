@@ -10,18 +10,11 @@ import config
 from chainer import cuda
 from python_speech_features import logfbank
 from python_speech_features import fbank
+from util import stdout, print_bold
 
 # for data augmentation
 import pyworld as pw
 from acoustics import generator
-
-class stdout:
-	BOLD = "\033[1m"
-	END = "\033[0m"
-	CLEAR = "\033[2K"
-
-def print_bold(str):
-	print(stdout.BOLD + str + stdout.END)
 
 def get_vocab():
 	characters = [
@@ -329,6 +322,52 @@ class AugmentationOption():
 			return True
 		return False
 
+class DevMinibatchIterator(object):
+	def __init__(self, dataset, batchsizes, option=None, gpu=True):
+		self.dataset = dataset
+		self.batchsizes = batchsizes
+		self.option = None
+		self.gpu = gpu
+		self.bucket_idx = 0
+		self.group_idx = 0
+		self.pos = 0
+
+	def __iter__(self):
+		return self
+
+	def __next__(self):
+		bucket_idx = self.bucket_idx
+		group_idx = self.group_idx
+
+		if bucket_idx >= len(self.dataset.buckets_indices_dev):
+			raise StopIteration()
+
+		signal_list = self.dataset.get_signals_for_bucket_and_group(bucket_idx, group_idx)
+		sentence_list = self.dataset.get_sentences_for_bucket_and_group(bucket_idx, group_idx)
+				
+		indices_dev = self.dataset.buckets_indices_dev[bucket_idx][group_idx]
+
+		batchsize = self.batchsizes[bucket_idx]
+		batchsize = len(indices_dev) - self.pos if batchsize > len(indices_dev) - self.pos else batchsize
+		indices = indices_dev[self.pos:self.pos + batchsize]
+		assert len(indices) > 0
+
+		extracted_features, sentences, max_feature_length, max_sentence_length = self.dataset.extract_features_by_indices(indices, signal_list, sentence_list, option=self.option)
+		x_batch, x_length_batch, t_batch, t_length_batch = self.dataset.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=self.gpu)
+
+		self.pos += batchsize
+		if self.pos >= len(indices_dev):
+			self.group_idx += 1
+			self.pos = 0
+
+		if self.group_idx >= len(self.dataset.buckets_indices_dev[bucket_idx]):
+			self.group_idx = 0
+			self.bucket_idx += 1
+
+		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx
+
+	next = __next__  # Python 2
+		
 class Dataset(object):
 	def __init__(self, data_path, buckets_limit=None, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0, id_blank=0):
 		self.num_signals_per_file = num_signals_per_file
@@ -360,8 +399,8 @@ class Dataset(object):
 		except:
 			raise Exception("Run dataset.py before starting training.")
 
-		self.mean = np.load(mean_filename)[None, ...]
-		self.std = np.load(std_filename)[None, ...]
+		self.mean = np.load(mean_filename)[None, ...].astype(np.float32)
+		self.std = np.load(std_filename)[None, ...].astype(np.float32)
 
 		buckets_signal = []
 		buckets_sentence = []
@@ -385,6 +424,7 @@ class Dataset(object):
 
 		if buckets_limit is not None:
 			buckets_signal = buckets_signal[:buckets_limit]
+			buckets_sentence = buckets_sentence[:buckets_limit]
 			buckets_num_data = buckets_num_data[:buckets_limit]
 
 		buckets_num_group = []
@@ -521,6 +561,14 @@ class Dataset(object):
 			with open (os.path.join(self.data_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
 				signal_list = pickle.load(f)
 				self.buckets_signal[bucket_idx][group_idx] = signal_list
+
+		# 一定以上はメモリ解放
+		self.cached_indices.append((bucket_idx, group_idx))
+		if len(self.cached_indices) > self.num_signals_memory:
+			_bucket_idx, _group_idx = self.cached_indices.pop(0)
+			self.buckets_signal[_bucket_idx][_group_idx] = None
+			self.buckets_sentence[bucket_idx][group_idx] = None
+
 		return signal_list
 
 	def get_sentences_for_bucket_and_group(self, bucket_idx, group_idx):
@@ -628,14 +676,8 @@ class Dataset(object):
 
 		extracted_features, sentences, max_feature_length, max_sentence_length = self.extract_features_by_indices(indices, signal_list, sentence_list, option=option)
 
-		# 一定以上はメモリ解放
-		self.cached_indices.append((bucket_idx, group_idx))
-		if len(self.cached_indices) > self.num_signals_memory:
-			_bucket_idx, _group_idx = self.cached_indices.pop(0)
-			self.buckets_signal[_bucket_idx][_group_idx] = None
-
 		x_batch, x_length_batch, t_batch, t_length_batch = self.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
-		
+
 		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx
 
 	def get_next_dev_minibatch(self, batchsizes, option=None, gpu=True):
@@ -654,19 +696,6 @@ if __name__ == "__main__":
 		os.mkdir(os.path.join(cache_path, "sentence"))
 	except:
 		pass
-
-
-	batchsizes = [16] * 6
-	dataset = Dataset(cache_path, 6, id_blank=0)
-	dataset.dump_information()
-	augmentation = AugmentationOption()
-	augmentation.change_vocal_tract = False
-	augmentation.change_speech_rate = False
-	augmentation.add_noise = False
-	for i in range(100):
-		print(i)
-		x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = dataset.get_minibatch(batchsizes)
-	raise Exception()
 
 	# すべての.wavを読み込み、一定の長さごとに保存
 	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000)

@@ -10,19 +10,10 @@ from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
 import config
 from error import compute_minibatch_error
-from dataset import Dataset, cache_path, get_vocab, AugmentationOption
+from dataset import Dataset, cache_path, get_vocab, AugmentationOption, DevMinibatchIterator
 from model import load_model, save_model, build_model
 from ctc import connectionist_temporal_classification
-
-class stdout:
-	BOLD = "\033[1m"
-	END = "\033[0m"
-	CLEAR = "\033[2K"
-	MOVE = "\033[1A"
-	LEFT = "\033[G"
-
-def print_bold(str):
-	print(stdout.BOLD + str + stdout.END)
+from util import stdout, print_bold
 
 def get_current_learning_rate(opt):
 	if isinstance(opt, optimizers.NesterovAG):
@@ -163,10 +154,31 @@ def main():
 
 		# バリデーション
 		with chainer.using_config("train", False):
-			x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = dataset.get_minibatch(batchsizes, option=augmentation, gpu=True)
-			y_batch = model(x_batch, split_into_variables=False)
-			y_batch = xp.argmax(y_batch.data, axis=2)
-			train_error = compute_minibatch_error(y_batch, t_batch, BLANK) * 100
+			try:
+				iterator = DevMinibatchIterator(dataset, batchsizes, augmentation, gpu=args.gpu_device >= 0)
+				buckets_errors = []
+				for batch in iterator:
+					x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx = batch
+
+					sys.stdout.write("\r" + stdout.CLEAR)
+					sys.stdout.write("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
+					sys.stdout.flush()
+
+					y_batch = model(x_batch, split_into_variables=False)
+					y_batch = xp.argmax(y_batch.data, axis=2)
+					error = compute_minibatch_error(y_batch, t_batch, BLANK)
+
+					while bucket_idx >= len(buckets_errors):
+						buckets_errors.append([])
+
+					buckets_errors[bucket_idx].append(error)
+
+				avg_errors_dev = []
+				for errors in buckets_errors:
+					avg_errors_dev.append(sum(errors) / len(errors) * 100)
+
+			except Exception as e:
+				print(" ", bucket_idx, str(e))
 
 		sys.stdout.write(stdout.MOVE)
 		sys.stdout.write(stdout.LEFT)
@@ -177,7 +189,7 @@ def main():
 		print("Epoch {} done in {} min - total {} min".format(epoch, int(elapsed_time / 60), int(total_time / 60)))
 		sys.stdout.write(stdout.CLEAR)
 		print("	loss:", sum_loss / total_iterations_train)
-		print("	CER (train):	{:.2f}".format(train_error))
+		print("	CER:	{}".format(formatted_error(avg_errors_dev)))
 		print("	lr: {}".format(get_current_learning_rate(optimizer)))
 
 		# 学習率の減衰
@@ -206,11 +218,7 @@ if __name__ == "__main__":
 	parser.add_argument("--architecture", "-arch", type=str, default="zhang")
 	
 	parser.add_argument("--gpu-device", "-g", type=int, default=0) 
-	parser.add_argument("--interval", type=int, default=100)
 	parser.add_argument("--model-dir", "-m", type=str, default="model")
-	parser.add_argument("--dev-split", "-split", type=float, default=0.01)
-	parser.add_argument("--train-filename", "-train", default=None)
-	parser.add_argument("--dev-filename", "-dev", default=None)
 
 	parser.add_argument("--buckets-limit", type=int, default=None)
 	parser.add_argument("--data-limit", type=int, default=None)
