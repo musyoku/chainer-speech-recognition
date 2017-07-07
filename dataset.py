@@ -450,125 +450,91 @@ class Dataset(object):
 			print("{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, num_train, num_dev, config.bucket_split_sec * (bucket_idx + 1)))
 		print("total	{:>6}	{:>4}".format(total_train, total_dev))
 
-	def get_minibatch(self, batchsizes, option=None, gpu=True):
-		config = chainer.config
-		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
-		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
-		num_data = self.buckets_num_data[bucket_idx][group_idx]
+	def augment_signal(self, signal, option):
+		signal = np.asarray(signal, dtype=np.float64)
+		_f0, t = pw.dio(signal, config.sampling_rate)    		# raw pitch extractor
+		f0 = pw.stonemask(signal, _f0, t, config.sampling_rate) # pitch refinement
+		sp = pw.cheaptrick(signal, f0, t, config.sampling_rate) # extract smoothed spectrogram
+		ap = pw.d4c(signal, f0, t, config.sampling_rate)        # extract aperiodicity
 
+		# 話速歪み
+		speed = 1.2
+		orig_length = len(f0)
+		new_length = int(orig_length / speed)
+		dim = ap.shape[1]
+
+		new_f0 = np.empty((new_length,), dtype=np.float64)
+		new_sp = np.empty((new_length, dim), dtype=np.float64)
+		new_ap = np.empty((new_length, dim), dtype=np.float64)
+
+		for t in range(new_length):
+			i = int(t * speed)
+			new_f0[t] = f0[i]
+			new_sp[t] = sp[i]
+			new_ap[t] = ap[i]
+
+		f0 = new_f0
+		sp = new_sp
+		ap = new_ap
+
+		new_sp = np.empty((new_length, dim), dtype=np.float64)
+		new_ap = np.empty((new_length, dim), dtype=np.float64)
+
+		# 声道長歪み
+		ratio = 1.2
+		for t in range(new_length):
+			for d in range(dim):
+				i = int(d * ratio)
+				if i < dim:
+					new_sp[t, d] = sp[t, i]
+					new_ap[t, d] = ap[t, i]
+				else:
+					new_sp[t, d] = sp[t, -1]
+					new_ap[t, d] = ap[t, -1]
+
+		# new_f0 = f0 * 0.8
+
+		# y = pw.synthesize(f0, sp, ap, config.sampling_rate)
+		# path = "/home/stark/sandbox/world"
+
+		# wavfile.write(os.path.join(path, "%d.original.wav" % data_idx), config.sampling_rate, signal.astype(np.int16))
+
+		# # y = pw.synthesize(f0 * 2.0, sp, ap, config.sampling_rate)
+		# # wavfile.write(os.path.join(path, "%d.2.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
+
+		signal = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
+		gain = 500
+		noise = generator.noise(len(signal), color="white") * gain
+
+		# wavfile.write(os.path.join(path, "%d.track.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
+		
+		# y = pw.synthesize(new_f0, sp, ap, config.sampling_rate)
+		# wavfile.write(os.path.join(path, "%d.f0.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
+		# pass
+
+		return signal
+
+	def get_signals_for_bucket_and_group(self, bucket_idx, group_idx):
+		num_data = self.buckets_num_data[bucket_idx][group_idx]
 		signal_list = self.buckets_signal[bucket_idx][group_idx]
 		if signal_list is None:
 			with open (os.path.join(self.data_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
 				signal_list = pickle.load(f)
 				self.buckets_signal[bucket_idx][group_idx] = signal_list
+		return signal_list
 
+	def get_sentences_for_bucket_and_group(self, bucket_idx, group_idx):
+		num_data = self.buckets_num_data[bucket_idx][group_idx]
 		sentence_list = self.buckets_sentence[bucket_idx][group_idx]
 		if sentence_list is None:
 			with open (os.path.join(self.data_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
 				sentence_list = pickle.load(f)
 				self.buckets_sentence[bucket_idx][group_idx] = sentence_list
-				
-		indices = self.buckets_indices_train[bucket_idx][group_idx]
-		np.random.shuffle(indices)
+		return sentence_list
 
-		batchsize = batchsizes[bucket_idx]
-		batchsize = len(indices) if batchsize > len(indices) else batchsize
-		indices = indices[:batchsize]
-		signals_batch = []
-		max_feature_length = 0
-		max_sentence_length = 0
-
-		extracted_features = []
-		sentences = []
-
-		for data_idx in indices:
-			signal = signal_list[data_idx]
-			sentence = sentence_list[data_idx]
-
-			# データ拡大
-			if option is not None and option.using_augmentation():
-				signal = np.asarray(signal, dtype=np.float64)
-				_f0, t = pw.dio(signal, config.sampling_rate)    		# raw pitch extractor
-				f0 = pw.stonemask(signal, _f0, t, config.sampling_rate) # pitch refinement
-				sp = pw.cheaptrick(signal, f0, t, config.sampling_rate) # extract smoothed spectrogram
-				ap = pw.d4c(signal, f0, t, config.sampling_rate)        # extract aperiodicity
-
-				# 話速歪み
-				speed = 1.2
-				orig_length = len(f0)
-				new_length = int(orig_length / speed)
-				dim = ap.shape[1]
-
-				new_f0 = np.empty((new_length,), dtype=np.float64)
-				new_sp = np.empty((new_length, dim), dtype=np.float64)
-				new_ap = np.empty((new_length, dim), dtype=np.float64)
-
-				for t in range(new_length):
-					i = int(t * speed)
-					new_f0[t] = f0[i]
-					new_sp[t] = sp[i]
-					new_ap[t] = ap[i]
-
-				f0 = new_f0
-				sp = new_sp
-				ap = new_ap
-
-				new_sp = np.empty((new_length, dim), dtype=np.float64)
-				new_ap = np.empty((new_length, dim), dtype=np.float64)
-
-				# 声道長歪み
-				ratio = 1.2
-				for t in range(new_length):
-					for d in range(dim):
-						i = int(d * ratio)
-						if i < dim:
-							new_sp[t, d] = sp[t, i]
-							new_ap[t, d] = ap[t, i]
-						else:
-							new_sp[t, d] = sp[t, -1]
-							new_ap[t, d] = ap[t, -1]
-
-				# new_f0 = f0 * 0.8
-
-				# y = pw.synthesize(f0, sp, ap, config.sampling_rate)
-				# path = "/home/stark/sandbox/world"
-
-				# wavfile.write(os.path.join(path, "%d.original.wav" % data_idx), config.sampling_rate, signal.astype(np.int16))
-
-				# # y = pw.synthesize(f0 * 2.0, sp, ap, config.sampling_rate)
-				# # wavfile.write(os.path.join(path, "%d.2.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
-
-				signal = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
-				gain = 500
-				noise = generator.noise(len(signal), color="white") * gain
-
-				# wavfile.write(os.path.join(path, "%d.track.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
-				
-				# y = pw.synthesize(new_f0, sp, ap, config.sampling_rate)
-				# wavfile.write(os.path.join(path, "%d.f0.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
-				# pass
-
-			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
-			if logmel.shape[1] > max_feature_length:
-				max_feature_length = logmel.shape[1]
-			if len(sentence) > max_sentence_length:
-				max_sentence_length = len(sentence)
-
-			if logmel.shape[1] == 0:
-				continue
-
-			extracted_features.append((logmel, delta, delta_delta))
-			sentences.append(sentence)
-
-		assert max_feature_length > 0
-
-		# 一定以上はメモリ解放
-		self.cached_indices.append((bucket_idx, group_idx))
-		if len(self.cached_indices) > self.num_signals_memory:
-			_bucket_idx, _group_idx = self.cached_indices.pop(0)
-			self.buckets_signal[_bucket_idx][_group_idx] = None
-
-		batchsize = len(extracted_features)
+	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
+		config = chainer.config
+		batchsize = len(features)
 		channels = 1
 		if config.using_delta:
 			channels += 1
@@ -581,7 +547,7 @@ class Dataset(object):
 		x_length_batch = []
 		t_length_batch = []
 
-		for batch_idx, ((logmel, delta, delta_delta), sentence) in enumerate(zip(extracted_features, sentences)):
+		for batch_idx, ((logmel, delta, delta_delta), sentence) in enumerate(zip(features, sentences)):
 			x_length = logmel.shape[1]
 			t_length = len(sentence)
 
@@ -613,7 +579,67 @@ class Dataset(object):
 			x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
 			t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
+		return x_batch, x_length_batch, t_batch, t_length_batch
+
+	def extract_features_by_indices(self, indices, signal_list, sentence_list, option=None):
+		config = chainer.config
+		max_feature_length = 0
+		max_sentence_length = 0
+		extracted_features = []
+		sentences = []
+
+		for data_idx in indices:
+			signal = signal_list[data_idx]
+			sentence = sentence_list[data_idx]
+
+			# データ拡大
+			if option is not None and option.using_augmentation():
+				signal = self.augment_signal(signal, option)
+
+			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
+			if logmel.shape[1] > max_feature_length:
+				max_feature_length = logmel.shape[1]
+			if len(sentence) > max_sentence_length:
+				max_sentence_length = len(sentence)
+
+			if logmel.shape[1] == 0:
+				continue
+
+			extracted_features.append((logmel, delta, delta_delta))
+			sentences.append(sentence)
+
+		assert max_feature_length > 0
+
+		return extracted_features, sentences, max_feature_length, max_sentence_length
+
+	def get_minibatch(self, batchsizes, option=None, gpu=True):
+		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
+		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
+
+		signal_list = self.get_signals_for_bucket_and_group(bucket_idx, group_idx)
+		sentence_list = self.get_sentences_for_bucket_and_group(bucket_idx, group_idx)
+				
+		indices = self.buckets_indices_train[bucket_idx][group_idx]
+		np.random.shuffle(indices)
+
+		batchsize = batchsizes[bucket_idx]
+		batchsize = len(indices) if batchsize > len(indices) else batchsize
+		indices = indices[:batchsize]
+
+		extracted_features, sentences, max_feature_length, max_sentence_length = self.extract_features_by_indices(indices, signal_list, sentence_list, option=option)
+
+		# 一定以上はメモリ解放
+		self.cached_indices.append((bucket_idx, group_idx))
+		if len(self.cached_indices) > self.num_signals_memory:
+			_bucket_idx, _group_idx = self.cached_indices.pop(0)
+			self.buckets_signal[_bucket_idx][_group_idx] = None
+
+		x_batch, x_length_batch, t_batch, t_length_batch = self.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
+		
 		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx
+
+	def get_next_dev_minibatch(self, batchsizes, option=None, gpu=True):
+		pass
 
 if __name__ == "__main__":
 	try:
@@ -628,6 +654,19 @@ if __name__ == "__main__":
 		os.mkdir(os.path.join(cache_path, "sentence"))
 	except:
 		pass
+
+
+	batchsizes = [16] * 6
+	dataset = Dataset(cache_path, 6, id_blank=0)
+	dataset.dump_information()
+	augmentation = AugmentationOption()
+	augmentation.change_vocal_tract = False
+	augmentation.change_speech_rate = False
+	augmentation.add_noise = False
+	for i in range(100):
+		print(i)
+		x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = dataset.get_minibatch(batchsizes)
+	raise Exception()
 
 	# すべての.wavを読み込み、一定の長さごとに保存
 	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000)
