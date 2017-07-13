@@ -33,11 +33,11 @@ pip install acoustics
 
 ## TODO
 
-- [ ] CTC
+- [x] CTC
 - [ ] 声道長歪み
 - [ ] 話速歪み
 - [ ] ランダム歪み
-- [ ] 大規模データの読み出し
+- [x] 大規模データの読み出し
 
 ## Tools
 

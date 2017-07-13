@@ -130,7 +130,7 @@ def main():
 
 					# 誤差の計算
 					y_batch = model(x_batch)	# list of variables
-					loss = connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
+					loss = F.connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
 
 					# NaN
 					loss_value = float(loss.data)
