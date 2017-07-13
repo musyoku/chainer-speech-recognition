@@ -1,3 +1,4 @@
+# coding: utf-8
 import chainer
 import numpy as np
 

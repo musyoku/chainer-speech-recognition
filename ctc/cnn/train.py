@@ -154,10 +154,10 @@ def main():
 
 		# バリデーション
 		with chainer.using_config("train", False):
-			try:
-				iterator = DevMinibatchIterator(dataset, batchsizes, augmentation, gpu=args.gpu_device >= 0)
-				buckets_errors = []
-				for batch in iterator:
+			iterator = DevMinibatchIterator(dataset, batchsizes, augmentation, gpu=args.gpu_device >= 0)
+			buckets_errors = []
+			for batch in iterator:
+				try:
 					x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx = batch
 
 					sys.stdout.write("\r" + stdout.CLEAR)
@@ -172,13 +172,13 @@ def main():
 						buckets_errors.append([])
 
 					buckets_errors[bucket_idx].append(error)
+				except Exception as e:
+					print(" ", bucket_idx, str(e))
 
-				avg_errors_dev = []
-				for errors in buckets_errors:
-					avg_errors_dev.append(sum(errors) / len(errors) * 100)
+			avg_errors_dev = []
+			for errors in buckets_errors:
+				avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-			except Exception as e:
-				print(" ", bucket_idx, str(e))
 
 		sys.stdout.write(stdout.MOVE)
 		sys.stdout.write(stdout.LEFT)

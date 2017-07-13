@@ -262,10 +262,10 @@ class LayerNormalization(chainer.link.Link):
 		normalized = normalize_layer(x)
 		return functions.math.bias.bias(functions.math.scale.scale(normalized, self.gamma), self.beta)
 
-class GLU(chainer.link.Chain):
-	def __init__(self, in_channels, out_channels, ksize=(3, 5), wgain=1., weightnorm=False):
+class GLU(object):
+	def __init__(self, in_channels, out_channels, ksize=(3, 5), pad=0, wgain=1., weightnorm=False):
 		wstd = math.sqrt(wgain / in_channels / ksize[0] / ksize[1])
-		super(GLU, self).__init__(W=Convolution2D(in_channels, 2 * out_channels, ksize, stride=1, pad=(1, ksize[1] - 1), initialW=chainer.initializers.HeNormal(wstd), weightnorm=weightnorm))
+		self.W = Convolution2D(in_channels, 2 * out_channels, ksize, stride=1, pad=pad, initialW=chainer.initializers.HeNormal(wstd), weightnorm=weightnorm)
 		self._in_channels, self._out_channels, self._kernel_size, = in_channels, out_channels, ksize
 
 	def __call__(self, X):
@@ -275,8 +275,8 @@ class GLU(chainer.link.Chain):
 			WX = WX[..., :-pad]
 
 		A, B = functions.split_axis(WX, 2, axis=1)
-		self.H = A * functions.sigmoid(B)
-		return self.H
+		H = A * functions.sigmoid(B)
+		return H
 
 # Connections
 
@@ -306,6 +306,9 @@ class Stream(chainer.Chain):
 
 				if isinstance(layer, chainer.Link):
 					setattr(self, "layer_%d" % index, layer)
+
+				if isinstance(layer, GLU):
+					setattr(self, "layer_%d" % index, layer.W)
 
 				if isinstance(layer, Residual):
 					for _index, _layer in enumerate(layer.layers):

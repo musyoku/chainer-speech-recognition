@@ -90,7 +90,7 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 			nn.Dropout(dropout),
 		)
 		model.layer(
-			nn.Convolution2D(ndim_dense, vocab_size, ksize=1, stride=1, pad=0, weightnorm=weightnorm)
+			nn.Convolution2D(ndim_dense, vocab_size, ksize=1, stride=1, pad=0, weightnorm=weightnorm),
 			nn.LayerNormalization(None),
 		)
 		return model
@@ -140,13 +140,13 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 		# conv layers
 		for _ in xrange(num_conv_layers):
 			model.layer(
-				nn.GLU(ndim_h, ndim_h, kernel_size, weightnorm=weightnorm),
+				nn.GLU(ndim_h, ndim_h, kernel_size, pad=(1, kernel_size[1] - 1), weightnorm=weightnorm),
 				# nn.LayerNormalization(None),
 				nn.Dropout(dropout),
 			)
 		# dense layers
 		model.layer(
-			nn.GLU(ndim_h, ndim_dense, ksize=(kernel_height, 1), weightnorm=weightnorm),
+			nn.GLU(ndim_h, ndim_dense, ksize=(kernel_height, 1), pad=0, weightnorm=weightnorm),
 			# nn.LayerNormalization(None),
 			nn.Dropout(dropout),
 		)
