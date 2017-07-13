@@ -91,6 +91,7 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 		)
 		model.layer(
 			nn.Convolution2D(ndim_dense, vocab_size, ksize=1, stride=1, pad=0, weightnorm=weightnorm)
+			nn.LayerNormalization(None),
 		)
 		return model
 
@@ -118,6 +119,35 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 			nn.Convolution2D(ndim_h, ndim_dense * 2, ksize=(kernel_height, 1), stride=1, pad=0, weightnorm=weightnorm),
 			nn.LayerNormalization(None),
 			nn.Maxout(2),
+			nn.Dropout(dropout),
+		)
+		model.layer(
+			nn.Convolution2D(ndim_dense, vocab_size, ksize=1, stride=1, pad=0, weightnorm=weightnorm),
+			nn.LayerNormalization(None),
+		)
+		return model
+
+	if architecture == "glu":
+		# first layer
+		model.layer(
+			nn.Convolution2D(ndim_audio_features, ndim_h * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+			lambda x: x[..., :-pad],
+			# nn.LayerNormalization(None),
+			nn.Maxout(2),
+			nn.Dropout(dropout),
+			nn.MaxPooling2D(ksize=(3, 1)),
+		)
+		# conv layers
+		for _ in xrange(num_conv_layers):
+			model.layer(
+				nn.GLU(ndim_h, ndim_h, kernel_size, weightnorm=weightnorm),
+				# nn.LayerNormalization(None),
+				nn.Dropout(dropout),
+			)
+		# dense layers
+		model.layer(
+			nn.GLU(ndim_h, ndim_dense, ksize=(kernel_height, 1), weightnorm=weightnorm),
+			# nn.LayerNormalization(None),
 			nn.Dropout(dropout),
 		)
 		model.layer(
