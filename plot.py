@@ -21,7 +21,7 @@ def plot_features(out_dir, signal, sampling_rate, filename):
 	# .wav
 	# wavfile.write(os.path.join(out_dir, filename + ".wav"), sampling_rate, signal.astype(np.int16))
 
-	specgram = fft.specgram(signal, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, winfunc=lambda x:np.hanning(x))
+	specgram = fft.get_specgram(signal, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, winfunc=lambda x:np.hanning(x))
 	
 	# data augmentation
 	# specgram = fft.augment_specgram(specgram)
