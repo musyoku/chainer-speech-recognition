@@ -6,7 +6,7 @@ cimport numpy as np
 np.import_array()
 
 cdef extern from "augmentation.h":
-    void augment(const double *x, int x_length, int fs)
+    void augment(const double* x, int x_length, int fs, double* y, int y_length)
 
 cdef extern from "world/synthesis.h":
     void Synthesis(const double *f0,
@@ -653,9 +653,10 @@ def wav2world(x, fs, frame_period=default_frame_period):
     ap = d4c(x, f0, t, fs)
     return f0, sp, ap
 
-def augment(np.ndarray[double, ndim=1, mode="c"] x not None, int fs):
-    _f0, t = dio(x, fs, frame_period=frame_period)
-    f0 = stonemask(x, _f0, t, fs)
-    sp = cheaptrick(x, f0, t, fs)
-    ap = d4c(x, f0, t, fs)
-    return f0, sp, ap
+def augment_signal(np.ndarray[double, ndim=1, mode="c"] x not None, int fs):
+    cdef int x_length = <int>len(x)
+    f0_length = GetSamplesForDIO(fs, x_length, default_frame_period)
+    y_length = int(f0_length * default_frame_period * fs / 1000)
+    cdef np.ndarray[double, ndim=1, mode="c"] y = np.zeros(y_length, dtype=np.float64)
+    augment(&x[0], x_length, fs, &y[0], y_length)
+    return y

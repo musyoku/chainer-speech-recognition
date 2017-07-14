@@ -11,19 +11,15 @@ from chainer import cuda
 from python_speech_features import fbank
 from util import stdout, print_bold
 
-# for data augmentation
-import pyworld as pw
-from acoustics import generator
-
 wav_path_list = [
-	"/home/aibo/sandbox/CSJ/WAV/core",
-	"/home/aibo/sandbox/CSJ/WAV/noncore",
+	"/home/stark/sandbox/CSJ/WAV/core",
+	"/home/stark/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/aibo/sandbox/CSJ_/core",
-	"/home/aibo/sandbox/CSJ_/noncore",
+	"/home/stark/sandbox/CSJ_/core",
+	"/home/stark/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/aibo/sandbox/audio"
+cache_path = "/home/stark/sandbox/audio"
 
 
 def get_vocab():
@@ -159,30 +155,46 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 				start = time.time()
 				ap = pw.d4c(signal, f0, t, config.sampling_rate)        # extract aperiodicity
 
+
+
 				print(time.time() - start)
 				start = time.time()
+
+				unko = augment_signal(signal, config.sampling_rate)
+				print(unko.shape)
+
+				print("cython")
+				print(time.time() - start)
+				start = time.time()
+
+				f0, sp, ap = pw.wav2world(signal, config.sampling_rate)
+				signal = pw.synthesize(f0, sp, ap, config.sampling_rate)
+
+				print(signal.shape)
+				print("python")
+				print(time.time() - start)
+				start = time.time()
+
 
 				print(sp.nbytes)
 				print(ap.nbytes)
 				print(f0.nbytes)
-
-
-
-
-				import pstats, cProfile
-				import pyximport
-				pyximport.install()
-
-				cProfile.runctx("pw.wav2world(x, fs)", globals(), {"x": signal.astype(np.float64), "fs": config.sampling_rate}, "Profile.prof")
-
-				s = pstats.Stats("Profile.prof")
-				s.strip_dirs().sort_stats("time").print_stats()
 
 				f0, sp, ap = pw.wav2world(signal.astype(np.float64), config.sampling_rate)
 				print(f0.shape)
 				print(sp.shape)
 				print(ap.shape)
 				world.append((f0, sp, ap))
+
+				print(config.num_fft)
+
+				start = time.time()
+				
+				logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
+
+				print("extract_features")
+				print(time.time() - start)
+
 				raise Exception()
 
 			with open (os.path.join(cache_path, "world", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_signals)), "wb") as f:
@@ -834,5 +846,11 @@ if __name__ == "__main__":
 	# デバッグ
 	# debug_buckets()
 
+	using_augmentation = True
+	if using_augmentation:
+		import pyworld as pw
+		from acoustics import generator
+		from world_augmentation import augment_signal
+
 	# すべての.wavを読み込み、一定の長さごとに保存
-	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000, augment=True)
+	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000, augment=using_augmentation)

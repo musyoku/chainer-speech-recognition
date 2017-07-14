@@ -4,19 +4,30 @@ import scipy.signal
 import scipy.io.wavfile as wavfile
 import numpy as np
 from matplotlib import pyplot as plt
-from python_speech_features import logfbank
-from python_speech_features import fbank
+import fft
+import scipy.io.wavfile as wavfile
+from acoustics import generator
 
-def plot_features(out_dir, signal, logmel, delta, delta_delta, sampling_rate, filename):
+def plot_features(out_dir, signal, sampling_rate, filename):
 	try:
 		os.makedirs(out_dir)
 	except:
 		pass
 
-	print(signal.shape)
-	print(logmel.shape)
-	print(delta.shape)
-	print(delta_delta.shape)
+	# add noise (optional)
+	# noise = (generator.noise(len(signal), color="white") * 400).astype(np.int16)
+	# signal += noise	
+
+	# .wav
+	# wavfile.write(os.path.join(out_dir, filename + ".wav"), sampling_rate, signal.astype(np.int16))
+
+	specgram = fft.specgram(signal, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, winfunc=lambda x:np.hanning(x))
+	
+	# data augmentation
+	# specgram = fft.augment_specgram(specgram)
+
+	logmel = fft.compute_logmel(specgram, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, nfilt=40, lowfreq=0, winfunc=lambda x:np.hanning(x))
+	logmel, delta, delta_delta = fft.compute_deltas(logmel)
 
 	sampling_interval = 1.0 / sampling_rate
 	times = np.arange(len(signal)) * sampling_interval
@@ -32,7 +43,8 @@ def plot_features(out_dir, signal, logmel, delta, delta_delta, sampling_rate, fi
 	pylab.xlim([0, len(signal) * sampling_interval])
 
 	ax2 = pylab.subplot(512)
-	spectrum, freqs, bins, im = pylab.specgram(signal, 256, sampling_rate, noverlap=0.01 * sampling_rate, window=pylab.window_hanning, cmap=pylab.get_cmap("jet"))
+	specgram = np.log(specgram)
+	pylab.pcolormesh(np.arange(0, specgram.shape[0]), np.arange(0, specgram.shape[1]) * 8000 / specgram.shape[1], specgram.T, cmap=pylab.get_cmap("jet"))
 	pylab.title("Spectrogram")
 	pylab.xlabel("Time [sec]")
 	pylab.ylabel("Frequency [Hz]")
@@ -113,29 +125,14 @@ def split_audio(wav_filename, trn_filename):
 			else:
 				raise Exception()
 
-		# メルフィルタバンク出力の対数を計算
-		logmel, energy = fbank(signal, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, nfilt=40, lowfreq=0, winfunc=lambda x:np.hanning(x))
-		logmel = np.log(logmel)
-
-		# ΔとΔΔを計算
-		delta = (np.roll(logmel, -1, axis=0) - logmel) / 2
-		delta_delta = (np.roll(delta, -1, axis=0) - delta) / 2
-
-		# 不要な部分を削除
-		# ΔΔまで計算すると末尾の2つは正しくない値になる
-		logmel = logmel[:-2]
-		delta = delta[:-2]
-		delta_delta = delta_delta[:-2]
-
-		features.append((signal, logmel, delta, delta_delta))
+		features.append(signal)
 
 	return sampling_rate, features
 
 def main(args):
 	sampling_rate, features = split_audio(args.wav_filename, args.transcription_filename)
-	for idx, feature in enumerate(features):
-		signal, logmel, delta, delta_delta = feature
-		plot_features(args.out_dir, signal, logmel, delta, delta_delta, sampling_rate, "{}.png".format(idx+1))
+	for idx, signal in enumerate(features):
+		plot_features(args.out_dir, signal, sampling_rate, "{}.png".format(idx+1))
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
