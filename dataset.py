@@ -8,13 +8,23 @@ import scipy.io.wavfile as wavfile
 import pickle
 import config
 from chainer import cuda
-from python_speech_features import logfbank
 from python_speech_features import fbank
 from util import stdout, print_bold
 
 # for data augmentation
 import pyworld as pw
 from acoustics import generator
+
+wav_path_list = [
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
+]
+transcription_path_list = [
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
+]
+cache_path = "/home/aibo/sandbox/audio"
+
 
 def get_vocab():
 	characters = [
@@ -73,7 +83,7 @@ def extract_features(signal, sampling_rate=16000, num_fft=512, frame_width=0.032
 
 	return logmel, delta, delta_delta
 
-def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, data_limit, num_signals_per_file=1000):
+def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, data_limit, num_signals_per_file=1000, augment=False):
 	assert len(wav_paths) > 0
 	assert len(transcription_paths) > 0
 
@@ -122,6 +132,16 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 
 		with open (os.path.join(cache_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_signals)), "wb") as f:
 			pickle.dump(buckets_signal[bucket_idx], f)
+
+		if augment == True:
+			world = []
+			for signal in buckets_signal[bucket_idx]:
+				f0, sp, ap = pw.wav2world(signal.astype(np.float64), config.sampling_rate)
+				world.append((f0, sp, ap))
+
+			with open (os.path.join(cache_path, "world", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_signals)), "wb") as f:
+				pickle.dump(world, f)
+
 		num_sentences = len(buckets_sentence[bucket_idx])
 		assert num_signals == num_sentences
 		with open (os.path.join(cache_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_sentences)), "wb") as f:
@@ -296,17 +316,6 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 	np.save(os.path.join(cache_path, "mean.npy"), feature_mean.swapaxes(0, 1))
 	np.save(os.path.join(cache_path, "std.npy"), feature_std.swapaxes(0, 1))
 
-
-wav_path_list = [
-	"/home/aibo/sandbox/CSJ/WAV/core",
-	"/home/aibo/sandbox/CSJ/WAV/noncore",
-]
-transcription_path_list = [
-	"/home/aibo/sandbox/CSJ_/core",
-	"/home/aibo/sandbox/CSJ_/noncore",
-]
-cache_path = "/home/aibo/sandbox/wav"
-
 class AugmentationOption():
 	def __init__(self):
 		self.change_vocal_tract = False
@@ -433,6 +442,10 @@ class Dataset(object):
 		total_groups = sum(buckets_num_group)
 		total_buckets = len(buckets_signal)
 
+		buckets_world = []
+		for bucket in buckets_signal:
+			buckets_world.append([None] * len(bucket))
+
 		np.random.seed(seed)
 		buckets_indices_train = []
 		buckets_indices_dev = []
@@ -456,6 +469,7 @@ class Dataset(object):
 		self.buckets_num_data = buckets_num_data
 		self.buckets_indices_train = buckets_indices_train
 		self.buckets_indices_dev = buckets_indices_dev
+		self.buckets_world = buckets_world
 
 		self.total_groups = total_groups
 		self.total_buckets = total_buckets
@@ -490,47 +504,53 @@ class Dataset(object):
 			print("{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, num_train, num_dev, config.bucket_split_sec * (bucket_idx + 1)))
 		print("total	{:>6}	{:>4}".format(total_train, total_dev))
 
-	def augment_signal(self, signal, option):
-		signal = np.asarray(signal, dtype=np.float64)
-		_f0, t = pw.dio(signal, config.sampling_rate)    		# raw pitch extractor
-		f0 = pw.stonemask(signal, _f0, t, config.sampling_rate) # pitch refinement
-		sp = pw.cheaptrick(signal, f0, t, config.sampling_rate) # extract smoothed spectrogram
-		ap = pw.d4c(signal, f0, t, config.sampling_rate)        # extract aperiodicity
+	def augment_signal(self, world_feature, option):
+		# signal = np.asarray(signal, dtype=np.float64)
+		# _f0, t = pw.dio(signal, config.sampling_rate)    			# raw pitch extractor
+		# f0 = pw.stonemask(signal, _f0, t, config.sampling_rate) 	# pitch refinement
+		# sp = pw.cheaptrick(signal, f0, t, config.sampling_rate) 	# extract smoothed spectrogram
+		# ap = pw.d4c(signal, f0, t, config.sampling_rate)        	# extract aperiodicity
+
+		# f0, sp, ap = pw.wav2world(signal, config.sampling_rate)
+		f0, sp, ap = world_feature
 
 		# 話速歪み
-		speed = 1.2
-		orig_length = len(f0)
-		new_length = int(orig_length / speed)
-		dim = ap.shape[1]
+		if option.change_speech_rate == True:
+			speed = max(min(np.random.normal(1, 0.15), 1.2), 0.8)
+			orig_length = len(f0)
+			new_length = int(orig_length / speed)
+			assert new_length > 0
+			dim = ap.shape[1]
 
-		new_f0 = np.empty((new_length,), dtype=np.float64)
-		new_sp = np.empty((new_length, dim), dtype=np.float64)
-		new_ap = np.empty((new_length, dim), dtype=np.float64)
+			new_f0 = np.empty((new_length,), dtype=np.float64)
+			new_sp = np.empty((new_length, dim), dtype=np.float64)
+			new_ap = np.empty((new_length, dim), dtype=np.float64)
 
-		for t in range(new_length):
-			i = int(t * speed)
-			new_f0[t] = f0[i]
-			new_sp[t] = sp[i]
-			new_ap[t] = ap[i]
+			for t in range(new_length):
+				i = int(t * speed)
+				new_f0[t] = f0[i]
+				new_sp[t] = sp[i]
+				new_ap[t] = ap[i]
 
-		f0 = new_f0
-		sp = new_sp
-		ap = new_ap
-
-		new_sp = np.empty((new_length, dim), dtype=np.float64)
-		new_ap = np.empty((new_length, dim), dtype=np.float64)
+			f0 = new_f0
+			sp = new_sp
+			ap = new_ap
 
 		# 声道長歪み
-		ratio = 1.2
-		for t in range(new_length):
+		if option.change_vocal_tract == True:
+			new_sp = np.empty((new_length, dim), dtype=np.float64)
+			new_ap = np.empty((new_length, dim), dtype=np.float64)
+			ratio = max(min(np.random.normal(1, 0.15), 1.2), 0.8)
 			for d in range(dim):
 				i = int(d * ratio)
 				if i < dim:
-					new_sp[t, d] = sp[t, i]
-					new_ap[t, d] = ap[t, i]
+					new_sp[:, d] = sp[:, i]
+					new_ap[:, d] = ap[:, i]
 				else:
-					new_sp[t, d] = sp[t, -1]
-					new_ap[t, d] = ap[t, -1]
+					new_sp[:, d] = sp[:, -1]
+					new_ap[:, d] = ap[:, -1]
+			sp = new_sp
+			ap = new_ap
 
 		# new_f0 = f0 * 0.8
 
@@ -542,9 +562,12 @@ class Dataset(object):
 		# # y = pw.synthesize(f0 * 2.0, sp, ap, config.sampling_rate)
 		# # wavfile.write(os.path.join(path, "%d.2.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
 
-		signal = pw.synthesize(new_f0, new_sp, new_ap, config.sampling_rate)
-		gain = 500
-		noise = generator.noise(len(signal), color="white") * gain
+		signal = pw.synthesize(f0, sp, ap, config.sampling_rate)
+
+		if option.add_noise:
+			gain = max(min(np.random.normal(500, 200), 1000), 0)
+			noise = generator.noise(len(signal), color="white") * gain
+			signal += noise
 
 		# wavfile.write(os.path.join(path, "%d.track.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
 		
@@ -558,7 +581,7 @@ class Dataset(object):
 		num_data = self.buckets_num_data[bucket_idx][group_idx]
 		signal_list = self.buckets_signal[bucket_idx][group_idx]
 		if signal_list is None:
-			with open (os.path.join(self.data_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
+			with open(os.path.join(self.data_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
 				signal_list = pickle.load(f)
 				self.buckets_signal[bucket_idx][group_idx] = signal_list
 
@@ -568,8 +591,23 @@ class Dataset(object):
 			_bucket_idx, _group_idx = self.cached_indices.pop(0)
 			self.buckets_signal[_bucket_idx][_group_idx] = None
 			self.buckets_sentence[bucket_idx][group_idx] = None
+			self.buckets_world[bucket_idx][group_idx] = None
 
 		return signal_list
+
+	def get_world_features_for_bucket_and_group(self, bucket_idx, group_idx):
+		num_data = self.buckets_num_data[bucket_idx][group_idx]
+		world_filename = os.path.join(self.data_path, "world", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data))
+		if os.path.isfile(world_filename) == False:
+			return None
+
+		features_list = self.buckets_world[bucket_idx][group_idx]
+		if features_list is None:
+			with open(world_filename, "rb") as f:
+				features_list = pickle.load(f)
+				self.buckets_world[bucket_idx][group_idx] = features_list
+
+		return features_list
 
 	def get_sentences_for_bucket_and_group(self, bucket_idx, group_idx):
 		num_data = self.buckets_num_data[bucket_idx][group_idx]
@@ -629,7 +667,7 @@ class Dataset(object):
 
 		return x_batch, x_length_batch, t_batch, t_length_batch
 
-	def extract_features_by_indices(self, indices, signal_list, sentence_list, option=None):
+	def extract_features_by_indices(self, indices, signal_list, sentence_list, world_features_list, option=None):
 		config = chainer.config
 		max_feature_length = 0
 		max_sentence_length = 0
@@ -642,7 +680,9 @@ class Dataset(object):
 
 			# データ拡大
 			if option is not None and option.using_augmentation():
-				signal = self.augment_signal(signal, option)
+				assert world_features_list is not None
+				world_feature = world_features_list[data_idx]
+				signal = self.augment_signal(world_feature, option)
 
 			logmel, delta, delta_delta = extract_features(signal, config.sampling_rate, config.num_fft, config.frame_width, config.frame_shift, config.num_mel_filters, config.window_func, config.using_delta, config.using_delta_delta)
 			if logmel.shape[1] > max_feature_length:
@@ -657,7 +697,6 @@ class Dataset(object):
 			sentences.append(sentence)
 
 		assert max_feature_length > 0
-
 		return extracted_features, sentences, max_feature_length, max_sentence_length
 
 	def get_minibatch(self, batchsizes, option=None, gpu=True):
@@ -666,6 +705,7 @@ class Dataset(object):
 
 		signal_list = self.get_signals_for_bucket_and_group(bucket_idx, group_idx)
 		sentence_list = self.get_sentences_for_bucket_and_group(bucket_idx, group_idx)
+		world_features_list = self.get_world_features_for_bucket_and_group(bucket_idx, group_idx)
 				
 		indices = self.buckets_indices_train[bucket_idx][group_idx]
 		np.random.shuffle(indices)
@@ -674,28 +714,73 @@ class Dataset(object):
 		batchsize = len(indices) if batchsize > len(indices) else batchsize
 		indices = indices[:batchsize]
 
-		extracted_features, sentences, max_feature_length, max_sentence_length = self.extract_features_by_indices(indices, signal_list, sentence_list, option=option)
+		extracted_features, sentences, max_feature_length, max_sentence_length = self.extract_features_by_indices(indices, signal_list, sentence_list, world_features_list, option=option)
 
 		x_batch, x_length_batch, t_batch, t_length_batch = self.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
 
 		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx
 
-	def get_next_dev_minibatch(self, batchsizes, option=None, gpu=True):
+	# デバッグ用
+	def _dump_features_randomly(self, oud_dir, vocab, option=None):
+		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
+		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
+
+		signal_list = self.get_signals_for_bucket_and_group(bucket_idx, group_idx)
+		sentence_list = self.get_sentences_for_bucket_and_group(bucket_idx, group_idx)
+		world_features_list = self.get_world_features_for_bucket_and_group(bucket_idx, group_idx)
+
+		config = chainer.config
+		max_feature_length = 0
+		max_sentence_length = 0
+		extracted_features = []
+		sentences = []
+
+		for i, data_idx in enumerate(self.buckets_indices_train[bucket_idx][group_idx]):
+			signal = signal_list[data_idx]
+			sentence = sentence_list[data_idx]
+
+			# データ拡大
+			if option is not None and option.using_augmentation():
+				assert world_features_list is not None
+				world_feature = world_features_list[data_idx]
+				signal = self.augment_signal(world_feature, option)
+
+			sentence_str = ""
+			for char_id in sentence:
+				sentence_str += vocab[char_id]
+
+			wavfile.write(os.path.join(oud_dir, "%s.wav" % sentence_str), config.sampling_rate, signal.astype(np.int16))
+			sys.stdout.write("\rWriting signals in bucket {} ... {}/{}".format(bucket_idx + 1, i + 1, len(self.buckets_indices_train[bucket_idx][group_idx])))
+			sys.stdout.flush()
+
+def mkdir(d):
+	try:
+		os.mkdir(d)
+	except:
 		pass
+
+def debug_buckets():
+	dataset = Dataset("/home/aibo/sandbox/audio_test", 3, id_blank=0)
+	dataset.dump_information()
+
+	augmentation = AugmentationOption()
+	augmentation.change_vocal_tract = True
+	augmentation.change_speech_rate = True
+	augmentation.add_noise = True
+
+	vocab, vocab_inv, BLANK = get_vocab()
+
+	dataset._dump_features_randomly("/media/aibo/Sony_8GB/", vocab_inv, augmentation)
+	raise Exception()
 
 if __name__ == "__main__":
-	try:
-		os.mkdir(cache_path)
-	except:
-		pass
-	try:
-		os.mkdir(os.path.join(cache_path, "signal"))
-	except:
-		pass
-	try:
-		os.mkdir(os.path.join(cache_path, "sentence"))
-	except:
-		pass
+	mkdir(cache_path)
+	mkdir(os.path.join(cache_path, "signal"))
+	mkdir(os.path.join(cache_path, "world"))
+	mkdir(os.path.join(cache_path, "sentence"))
+
+	# デバッグ
+	debug_buckets()
 
 	# すべての.wavを読み込み、一定の長さごとに保存
-	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000)
+	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000, True)

@@ -72,10 +72,11 @@ def main():
 
 	dataset = Dataset(cache_path, args.buckets_limit, id_blank=BLANK)
 	dataset.dump_information()
+
 	augmentation = AugmentationOption()
-	augmentation.change_vocal_tract = False
-	augmentation.change_speech_rate = False
-	augmentation.add_noise = False
+	augmentation.change_vocal_tract = True
+	augmentation.change_speech_rate = True
+	augmentation.add_noise = True
 
 	# ミニバッチを取れないものは除外
 	# GTX 1080 1台基準
