@@ -74,9 +74,10 @@ def main():
 	dataset.dump_information()
 
 	augmentation = AugmentationOption()
-	augmentation.change_vocal_tract = True
-	augmentation.change_speech_rate = True
-	augmentation.add_noise = True
+	if args.augmentation:
+		augmentation.change_vocal_tract = True
+		augmentation.change_speech_rate = True
+		augmentation.add_noise = True
 
 	# ミニバッチを取れないものは除外
 	# GTX 1080 1台基準
@@ -205,6 +206,7 @@ if __name__ == "__main__":
 	parser.add_argument("--lr-decay", "-decay", type=float, default=0.95)
 	parser.add_argument("--momentum", "-mo", type=float, default=0.9)
 	parser.add_argument("--optimizer", "-opt", type=str, default="adam")
+	parser.add_argument("--augmentation", "-augmentation", default=False, action="store_true")
 	
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
 	parser.add_argument("--ndim-h", "-dh", type=int, default=320)
