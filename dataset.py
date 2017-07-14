@@ -460,7 +460,6 @@ class Dataset(object):
 		self.buckets_num_data = buckets_num_data
 		self.buckets_indices_train = buckets_indices_train
 		self.buckets_indices_dev = buckets_indices_dev
-		self.buckets_world = buckets_world
 
 		self.total_groups = total_groups
 		self.total_buckets = total_buckets
@@ -584,12 +583,9 @@ class Dataset(object):
 			# データ拡大
 			if option is not None and option.using_augmentation():
 				if option.add_noise:
-					gain = max(min(np.random.normal(200, 200), 500), 0)
-					for i in range(100):
-						gain = max(min(np.random.normal(200, 200), 500), 0)
-						print(gain)
-					noise = generator.noise(len(signal), color="white") * gain
-					signal += noise
+					gain = max(min(np.random.normal(200, 100), 500), 0)
+					noise = acoustics.generator.noise(len(signal), color="white") * gain
+					signal += noise.astype(np.int16)
 
 			specgram = fft.get_specgram(signal, config.sampling_rate, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, winfunc=config.window_func)
 			
@@ -618,21 +614,12 @@ class Dataset(object):
 		return extracted_features, sentences, max_feature_length, max_sentence_length
 
 	def get_minibatch(self, batchsizes, option=None, gpu=True):
-		import time
-		start = time.time()
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
 
-		print("start")
-		print(time.time() - start)
-		start = time.time()
-
 		signal_list = self.get_signals_for_bucket_and_group(bucket_idx, group_idx)
 		sentence_list = self.get_sentences_for_bucket_and_group(bucket_idx, group_idx)
-		
-		print(time.time() - start)
-		start = time.time()
-
+	
 		indices = self.buckets_indices_train[bucket_idx][group_idx]
 		np.random.shuffle(indices)
 
@@ -641,16 +628,7 @@ class Dataset(object):
 		indices = indices[:batchsize]
 
 		extracted_features, sentences, max_feature_length, max_sentence_length = self.extract_features_by_indices(indices, signal_list, sentence_list, option=option)
-
-		
-		print(time.time() - start)
-		start = time.time()
-
 		x_batch, x_length_batch, t_batch, t_length_batch = self.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
-
-		
-		print(time.time() - start)
-		start = time.time()
 
 		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx
 
