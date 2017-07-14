@@ -12,7 +12,6 @@ import config
 from error import compute_minibatch_error
 from dataset import Dataset, cache_path, get_vocab, AugmentationOption, DevMinibatchIterator
 from model import load_model, save_model, build_model
-from ctc import connectionist_temporal_classification
 from util import stdout, print_bold
 
 def get_current_learning_rate(opt):
@@ -83,6 +82,9 @@ def main():
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	total_iterations_train = dataset.get_total_training_iterations(batchsizes)
+
+
+	total_iterations_train = 1
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size

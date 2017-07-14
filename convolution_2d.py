@@ -3,7 +3,7 @@ import math
 import numpy as np
 from six import moves
 from chainer import cuda, variable, initializers, link, function, Variable
-from chainer.utils import conv, type_check, argument
+from chainer.utils import conv, type_check
 from chainer.functions.connection import convolution_2d
 
 if cuda.cudnn_enabled:
@@ -122,13 +122,6 @@ class Convolution2DFunction(convolution_2d.Convolution2DFunction):
 			return gx, gV, gg, gb
 
 def convolution_2d(x, V, g, b=None, stride=1, pad=0, cover_all=False, **kwargs):
-	argument.check_unexpected_kwargs(
-		kwargs, deterministic="deterministic argument is not "
-		"supported anymore. "
-		"Use chainer.using_config('cudnn_deterministic', value) "
-		"context where value is either `True` or `False`.")
-	argument.assert_kwargs_empty(kwargs)
-	
 	func = Convolution2DFunction(stride, pad, cover_all)
 	if b is None:
 		return func(x, V, g)
@@ -139,13 +132,6 @@ class Convolution2D(link.Link):
 
 	def __init__(self, in_channels, out_channels, ksize=None, stride=1, pad=0, nobias=False, initialV=None, **kwargs):
 		super(Convolution2D, self).__init__()
-
-		argument.check_unexpected_kwargs(
-			kwargs, deterministic="deterministic argument is not "
-			"supported anymore. "
-			"Use chainer.using_config('cudnn_deterministic', value) "
-			"context where value is either `True` or `False`.")
-		argument.assert_kwargs_empty(kwargs)
 
 		if ksize is None:
 			out_channels, ksize, in_channels = in_channels, out_channels, None

@@ -83,9 +83,20 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 				nn.Maxout(2),
 				nn.Dropout(dropout),
 			)
+		model.layer(
+			nn.Convolution2D(ndim_h, ndim_h * 4, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+			lambda x: x[..., :-pad],
+			nn.Maxout(2),
+			nn.Dropout(dropout),
+		)
 		# dense layers
 		model.layer(
-			nn.Convolution2D(ndim_h, ndim_dense * 2, ksize=(kernel_height, 1), stride=1, pad=0, weightnorm=weightnorm),
+			nn.Convolution2D(ndim_h * 2, ndim_dense * 2, ksize=(kernel_height, 1), stride=1, pad=0, weightnorm=weightnorm),
+			nn.Maxout(2),
+			nn.Dropout(dropout),
+		)
+		model.layer(
+			nn.Convolution2D(ndim_dense, ndim_dense * 2, ksize=1, stride=1, pad=0, weightnorm=weightnorm),
 			nn.Maxout(2),
 			nn.Dropout(dropout),
 		)
