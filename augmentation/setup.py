@@ -9,8 +9,7 @@ from glob import glob
 from os.path import join
 
 
-# This can be loosen probably, though it's fine I think
-min_cython_ver = '0.24.0'
+min_cython_ver = "0.24.0"
 try:
     import Cython
     ver = Cython.__version__
@@ -20,19 +19,17 @@ except ImportError:
 
 try:
     if not _CYTHON_INSTALLED:
-        raise ImportError('No supported version of Cython installed.')
+        raise ImportError("No supported version of Cython installed.")
     from Cython.Distutils import build_ext
     cython = True
 except ImportError:
     cython = False
 
 if cython:
-    ext = '.pyx'
-    cmdclass = {'build_ext': build_ext}
+    cmdclass = {"build_ext": build_ext}
 else:
-    ext = '.cpp'
     cmdclass = {}
-    if not os.path.exists(join("pyworld", "pyworld" + ext)):
+    if not os.path.exists(join("augmentation.cpp")):
         raise RuntimeError("Cython is required to generate C++ wrapper")
 
 world_src_top = join("..", "World", "src")
@@ -42,20 +39,20 @@ ext_modules = [
     Extension(
         name="world_augmentation",
         include_dirs=[np.get_include(), world_src_top],
-        sources=["pyworld.pyx"] + world_sources,
+        sources=["augmentation.pyx"] + world_sources,
         language="c++")]
 
 setup(
     name="world_augmentation",
     ext_modules=ext_modules,
     cmdclass=cmdclass,
-    version='0.2.1b',
+    version="0.2.1b",
     packages=find_packages(),
     install_requires=[
-        'numpy',
+        "numpy",
     ],
     extras_require={
-        'test': ['nose'],
-        'develop': ['cython >= ' + min_cython_ver],
+        "test": ["nose"],
+        "develop": ["cython >= " + min_cython_ver],
     },
 )
