@@ -32,7 +32,7 @@ else:
     if not os.path.exists(join("augmentation.cpp")):
         raise RuntimeError("Cython is required to generate C++ wrapper")
 
-world_src_top = join("..", "World", "src")
+world_src_top = join("..", "world", "src")
 world_sources = glob(join(world_src_top, "*.cpp"))
 
 ext_modules = [

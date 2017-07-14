@@ -5,6 +5,8 @@ import numpy as np
 cimport numpy as np
 np.import_array()
 
+cdef extern from "augmentation.h":
+    void augment(const double *x, int x_length, int fs)
 
 cdef extern from "world/synthesis.h":
     void Synthesis(const double *f0,
@@ -645,6 +647,13 @@ def wav2world(x, fs, frame_period=default_frame_period):
     ap : ndarray
         Aperiodicity.
     """
+    _f0, t = dio(x, fs, frame_period=frame_period)
+    f0 = stonemask(x, _f0, t, fs)
+    sp = cheaptrick(x, f0, t, fs)
+    ap = d4c(x, f0, t, fs)
+    return f0, sp, ap
+
+def augment(np.ndarray[double, ndim=1, mode="c"] x not None, int fs):
     _f0, t = dio(x, fs, frame_period=frame_period)
     f0 = stonemask(x, _f0, t, fs)
     sp = cheaptrick(x, f0, t, fs)
