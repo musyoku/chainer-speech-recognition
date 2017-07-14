@@ -136,8 +136,54 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		if augment == True:
 			world = []
 			for signal in buckets_signal[bucket_idx]:
+
+				import time
+				start = time.time()
+
+				signal = np.asarray(signal, dtype=np.float64)
+
+				print(time.time() - start)
+				start = time.time()
+
+				_f0, t = pw.dio(signal, config.sampling_rate)    		# raw pitch extractor
+
+				print(time.time() - start)
+				start = time.time()
+				f0 = pw.stonemask(signal, _f0, t, config.sampling_rate) # pitch refinement
+
+				print(time.time() - start)
+				start = time.time()
+				sp = pw.cheaptrick(signal, f0, t, config.sampling_rate) # extract smoothed spectrogram
+
+				print(time.time() - start)
+				start = time.time()
+				ap = pw.d4c(signal, f0, t, config.sampling_rate)        # extract aperiodicity
+
+				print(time.time() - start)
+				start = time.time()
+
+				print(sp.nbytes)
+				print(ap.nbytes)
+				print(f0.nbytes)
+
+
+
+
+				import pstats, cProfile
+				import pyximport
+				pyximport.install()
+
+				cProfile.runctx("pw.wav2world(x, fs)", globals(), {"x": signal.astype(np.float64), "fs": config.sampling_rate}, "Profile.prof")
+
+				s = pstats.Stats("Profile.prof")
+				s.strip_dirs().sort_stats("time").print_stats()
+
 				f0, sp, ap = pw.wav2world(signal.astype(np.float64), config.sampling_rate)
+				print(f0.shape)
+				print(sp.shape)
+				print(ap.shape)
 				world.append((f0, sp, ap))
+				raise Exception()
 
 			with open (os.path.join(cache_path, "world", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_signals)), "wb") as f:
 				pickle.dump(world, f)
@@ -505,13 +551,6 @@ class Dataset(object):
 		print("total	{:>6}	{:>4}".format(total_train, total_dev))
 
 	def augment_signal(self, world_feature, option):
-		# signal = np.asarray(signal, dtype=np.float64)
-		# _f0, t = pw.dio(signal, config.sampling_rate)    			# raw pitch extractor
-		# f0 = pw.stonemask(signal, _f0, t, config.sampling_rate) 	# pitch refinement
-		# sp = pw.cheaptrick(signal, f0, t, config.sampling_rate) 	# extract smoothed spectrogram
-		# ap = pw.d4c(signal, f0, t, config.sampling_rate)        	# extract aperiodicity
-
-		# f0, sp, ap = pw.wav2world(signal, config.sampling_rate)
 		f0, sp, ap = world_feature
 
 		# 話速歪み
@@ -552,28 +591,12 @@ class Dataset(object):
 			sp = new_sp
 			ap = new_ap
 
-		# new_f0 = f0 * 0.8
-
-		# y = pw.synthesize(f0, sp, ap, config.sampling_rate)
-		# path = "/home/stark/sandbox/world"
-
-		# wavfile.write(os.path.join(path, "%d.original.wav" % data_idx), config.sampling_rate, signal.astype(np.int16))
-
-		# # y = pw.synthesize(f0 * 2.0, sp, ap, config.sampling_rate)
-		# # wavfile.write(os.path.join(path, "%d.2.wav" % data_idx), config.sampling_rate, y.astype(np.int16))
-
 		signal = pw.synthesize(f0, sp, ap, config.sampling_rate)
 
 		if option.add_noise:
-			gain = max(min(np.random.normal(500, 200), 1000), 0)
+			gain = max(min(np.random.normal(250, 200), 500), 0)
 			noise = generator.noise(len(signal), color="white") * gain
 			signal += noise
-
-		# wavfile.write(os.path.join(path, "%d.track.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
-		
-		# y = pw.synthesize(new_f0, sp, ap, config.sampling_rate)
-		# wavfile.write(os.path.join(path, "%d.f0.wav" % data_idx), config.sampling_rate, (y).astype(np.int16))
-		# pass
 
 		return signal
 
@@ -700,12 +723,25 @@ class Dataset(object):
 		return extracted_features, sentences, max_feature_length, max_sentence_length
 
 	def get_minibatch(self, batchsizes, option=None, gpu=True):
+		import time
+		start = time.time()
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
 
+		print("start")
+		print(time.time() - start)
+		start = time.time()
+
 		signal_list = self.get_signals_for_bucket_and_group(bucket_idx, group_idx)
 		sentence_list = self.get_sentences_for_bucket_and_group(bucket_idx, group_idx)
+		
+		print(time.time() - start)
+		start = time.time()
+
 		world_features_list = self.get_world_features_for_bucket_and_group(bucket_idx, group_idx)
+		
+		print(time.time() - start)
+		start = time.time()
 				
 		indices = self.buckets_indices_train[bucket_idx][group_idx]
 		np.random.shuffle(indices)
@@ -716,12 +752,21 @@ class Dataset(object):
 
 		extracted_features, sentences, max_feature_length, max_sentence_length = self.extract_features_by_indices(indices, signal_list, sentence_list, world_features_list, option=option)
 
+		
+		print(time.time() - start)
+		start = time.time()
+
 		x_batch, x_length_batch, t_batch, t_length_batch = self.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
+
+		
+		print(time.time() - start)
+		start = time.time()
 
 		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx
 
 	# デバッグ用
 	def _dump_features_randomly(self, oud_dir, vocab, option=None):
+		assert os.path.isfile(oud_dir) == True
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
 
@@ -770,6 +815,13 @@ def debug_buckets():
 
 	vocab, vocab_inv, BLANK = get_vocab()
 
+	import time
+	start = time.time()
+	for i in range(100):
+		minibatch = dataset.get_minibatch([32] * 20, augmentation, False)
+		print(i)
+	print((time.time() - start) / 100)
+
 	dataset._dump_features_randomly("/media/aibo/Sony_8GB/", vocab_inv, augmentation)
 	raise Exception()
 
@@ -780,7 +832,7 @@ if __name__ == "__main__":
 	mkdir(os.path.join(cache_path, "sentence"))
 
 	# デバッグ
-	debug_buckets()
+	# debug_buckets()
 
 	# すべての.wavを読み込み、一定の長さごとに保存
-	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000, True)
+	generate_buckets(wav_path_list, transcription_path_list, cache_path, 20, None, 1000, augment=True)

@@ -4,5 +4,6 @@
 # allow any
 !*/
 !*.py
+!*.pyx
 !*.md
 !.gitignore
