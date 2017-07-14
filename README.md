@@ -23,21 +23,19 @@ pip install python_speech_features
 for data augmentation
 
 - [python-acoustics](https://github.com/python-acoustics/python-acoustics) 
-- [Python-Wrapper-for-World-Vocoder](https://github.com/JeremyCCHsu/Python-Wrapper-for-World-Vocoder)
 
 ```
-pip install cython
-pip install pyworld
 pip install acoustics
 ``` 
 
 ## TODO
 
 - [x] CTC
-- [ ] 声道長歪み
-- [ ] 話速歪み
-- [ ] ランダム歪み
+- [x] 声道長歪み
+- [x] 話速歪み
+- [x] ランダム歪み
 - [x] 大規模データの読み出し
+- [ ] 文字誤り率10%以下
 
 ## Tools
 
