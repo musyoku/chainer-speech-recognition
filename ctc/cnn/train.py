@@ -84,8 +84,6 @@ def main():
 	total_iterations_train = dataset.get_total_training_iterations(batchsizes)
 
 
-	total_iterations_train = 1
-
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
 	chainer.global_config.ndim_audio_features = args.ndim_audio_features
