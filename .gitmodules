@@ -1,3 +1,3 @@
-[submodule "world"]
-	path = world
+[submodule "w"]
+	path = w
 	url = https://github.com/mmorise/World.git
