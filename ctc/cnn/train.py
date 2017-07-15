@@ -7,7 +7,7 @@ import chainer
 import numpy as np
 import chainer.functions as F
 from chainer import cuda, serializers
-import asyncio
+from multiprocessing import Process, Queue
 sys.path.append("../../")
 import config
 from error import compute_minibatch_error
@@ -21,6 +21,13 @@ def formatted_error(error_values):
 	for error in error_values:
 		errors.append("%.2f" % error)
 	return errors
+
+def preloading_loop(dataset, augmentation, num_load, queue):
+	for i in range(num_load):
+		print("Loaing minibatch ...")
+		queue.put(dataset.get_minibatch(option=augmentation, gpu=False))
+	print("Done.")
+	return queue
 
 def main():
 	# データの読み込み
@@ -39,7 +46,6 @@ def main():
 		augmentation.change_vocal_tract = True
 		augmentation.change_speech_rate = True
 		augmentation.add_noise = True
-
 
 	total_iterations_train = dataset.get_total_training_iterations()
 
@@ -76,6 +82,11 @@ def main():
 	final_learning_rate = 1e-4
 	total_time = 0
 
+	if args.multiprocessing:
+		num_preloads = 30
+		queue = preloading_loop(dataset, augmentation, num_preloads, Queue())
+		preloading_process = None
+
 	for epoch in xrange(1, args.total_epoch + 1):
 		print_bold("Epoch %d" % epoch)
 		start_time = time.time()
@@ -83,29 +94,58 @@ def main():
 		sum_loss = 0
 		
 		with chainer.using_config("train", True):
-			for itr in xrange(1, total_iterations_train + 1):
-				try:
-					x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = dataset.get_minibatch(option=augmentation, gpu=True)
+			current_iteration = 0
 
-					# 誤差の計算
-					y_batch = model(x_batch)	# list of variables
-					loss = F.connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
+			while total_iterations_train > current_iteration:
 
-					# NaN
-					loss_value = float(loss.data)
-					if loss_value != loss_value:
-						raise Exception("Encountered NaN when computing loss.")
+				if args.multiprocessing:
+					minibatches = []
+					for _ in range(num_preloads):
+						minibatches.append(queue.get())
 
-					# 更新
-					optimizer.update(lossfun=lambda: loss)
+					if preloading_process is not None:
+						preloading_process.join()
+						print("Joined.")
 
-				except Exception as e:
-					print(" ", bucket_idx, str(e))
+					queue = Queue()
+					preloading_process = Process(target=preloading_loop, args=(dataset, augmentation, num_preloads, queue))
+					preloading_process.start()
+					print("Started.")
+				else:
+					minibatches = [dataset.get_minibatch(option=augmentation, gpu=False)]
 
-				sum_loss += loss_value
-				sys.stdout.write("\r" + stdout.CLEAR)
-				sys.stdout.write("\riteration {}/{}".format(itr, total_iterations_train))
-				sys.stdout.flush()
+				for batch_idx, data in enumerate(minibatches):
+					try:
+						x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = data
+
+						if True:
+							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
+							t_batch = cuda.to_gpu(t_batch.astype(np.int32))
+							x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
+							t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
+
+						# 誤差の計算
+						y_batch = model(x_batch)	# list of variables
+						loss = F.connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
+
+						# NaN
+						loss_value = float(loss.data)
+						if loss_value != loss_value:
+							raise Exception("Encountered NaN when computing loss.")
+
+						# 更新
+						optimizer.update(lossfun=lambda: loss)
+
+					except Exception as e:
+						print(" ", bucket_idx, str(e))
+
+
+					sum_loss += loss_value
+					sys.stdout.write("\r" + stdout.CLEAR)
+					sys.stdout.write("\riteration {}/{}".format(batch_idx + current_iteration + 1, total_iterations_train))
+					sys.stdout.flush()
+
+				current_iteration += len(minibatches)
 
 		sys.stdout.write("\r" + stdout.CLEAR)
 		sys.stdout.flush()
@@ -164,7 +204,9 @@ if __name__ == "__main__":
 	parser.add_argument("--lr-decay", "-decay", type=float, default=0.95)
 	parser.add_argument("--momentum", "-mo", type=float, default=0.9)
 	parser.add_argument("--optimizer", "-opt", type=str, default="adam")
+
 	parser.add_argument("--augmentation", "-augmentation", default=False, action="store_true")
+	parser.add_argument("--multiprocessing", "-multi", default=False, action="store_true")
 	
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
 	parser.add_argument("--ndim-h", "-dh", type=int, default=320)
