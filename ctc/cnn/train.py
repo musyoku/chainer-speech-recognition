@@ -24,9 +24,7 @@ def formatted_error(error_values):
 
 def preloading_loop(dataset, augmentation, num_load, queue):
 	for i in range(num_load):
-		print("Loaing minibatch ...")
 		queue.put(dataset.get_minibatch(option=augmentation, gpu=False))
-	print("Done.")
 	return queue
 
 def main():
@@ -105,12 +103,10 @@ def main():
 
 					if preloading_process is not None:
 						preloading_process.join()
-						print("Joined.")
 
 					queue = Queue()
 					preloading_process = Process(target=preloading_loop, args=(dataset, augmentation, num_preloads, queue))
 					preloading_process.start()
-					print("Started.")
 				else:
 					minibatches = [dataset.get_minibatch(option=augmentation, gpu=False)]
 
