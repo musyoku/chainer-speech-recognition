@@ -29,6 +29,14 @@ def plot_features(out_dir, signal, sampling_rate, filename):
 	logmel = fft.compute_logmel(specgram, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, nfilt=40, lowfreq=0, winfunc=lambda x:np.hanning(x))
 	logmel, delta, delta_delta = fft.compute_deltas(logmel)
 
+	_plot_features(out_dir, signal, sampling_rate, logmel, delta, delta_delta, specgram, filename)
+
+def _plot_features(out_dir, signal, sampling_rate, logmel, delta, delta_delta, specgram, filename):
+	try:
+		os.makedirs(out_dir)
+	except:
+		pass
+
 	sampling_interval = 1.0 / sampling_rate
 	times = np.arange(len(signal)) * sampling_interval
 	pylab.clf()

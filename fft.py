@@ -37,7 +37,7 @@ def augment_specgram(pspec, change_speech_rate=True, change_vocal_tract=True):
 
     # 声道長歪み
     if change_vocal_tract == True:
-        new_pspec = np.empty((new_length, dim), dtype=np.float64) if new_pspec is None else new_pspec
+        new_pspec = np.empty((new_length, dim), dtype=np.float64) if new_pspec is None else pspec.copy()
         ratio = max(min(np.random.normal(1, 0.15), 1.2), 0.8)
         for d in range(dim):
             i = int(d * ratio)

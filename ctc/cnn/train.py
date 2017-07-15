@@ -75,13 +75,6 @@ def main():
 	final_learning_rate = 1e-4
 	total_time = 0
 
-
-	start = time.time()
-	for i in range(100):
-		dataset.get_minibatch(batchsizes, option=augmentation, gpu=True)
-	print((time.time() - start) / 100)
-	raise Exception()
-
 	for epoch in xrange(1, args.total_epoch + 1):
 		print_bold("Epoch %d" % epoch)
 		start_time = time.time()

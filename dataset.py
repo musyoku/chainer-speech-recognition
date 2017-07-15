@@ -581,6 +581,7 @@ class Dataset(object):
 
 			logmel = fft.compute_logmel(specgram, config.sampling_rate, fbank=self.fbank, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, nfilt=config.num_mel_filters, winfunc=config.window_func)
 			logmel, delta, delta_delta = fft.compute_deltas(logmel)
+
 			logmel = logmel.T
 			delta = delta.T
 			delta_delta = delta_delta.T
