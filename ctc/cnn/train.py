@@ -27,7 +27,11 @@ def main():
 	vocab, vocab_inv, BLANK = get_vocab()
 	vocab_size = len(vocab)
 
-	dataset = Dataset(cache_path, args.buckets_limit, id_blank=BLANK)
+	# ミニバッチを取れないものは除外
+	# GTX 1080 1台基準
+	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
+
+	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, id_blank=BLANK)
 	dataset.dump_information()
 
 	augmentation = AugmentationOption()
@@ -36,11 +40,8 @@ def main():
 		augmentation.change_speech_rate = True
 		augmentation.add_noise = True
 
-	# ミニバッチを取れないものは除外
-	# GTX 1080 1台基準
-	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
 
-	total_iterations_train = dataset.get_total_training_iterations(batchsizes)
+	total_iterations_train = dataset.get_total_training_iterations()
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
@@ -84,7 +85,7 @@ def main():
 		with chainer.using_config("train", True):
 			for itr in xrange(1, total_iterations_train + 1):
 				try:
-					x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = dataset.get_minibatch(batchsizes, option=augmentation, gpu=True)
+					x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = dataset.get_minibatch(option=augmentation, gpu=True)
 
 					# 誤差の計算
 					y_batch = model(x_batch)	# list of variables

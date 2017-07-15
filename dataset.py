@@ -13,14 +13,14 @@ from chainer import cuda
 from util import stdout, print_bold
 
 wav_path_list = [
-	"/home/stark/sandbox/CSJ/WAV/core",
-	"/home/stark/sandbox/CSJ/WAV/noncore",
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/stark/sandbox/CSJ_/core",
-	"/home/stark/sandbox/CSJ_/noncore",
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/stark/sandbox/wav"
+cache_path = "/home/aibo/sandbox/wav"
 
 
 def get_vocab():
@@ -356,13 +356,14 @@ class DevMinibatchIterator(object):
 	next = __next__  # Python 2
 		
 class Dataset(object):
-	def __init__(self, data_path, buckets_limit=None, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0, id_blank=0):
+	def __init__(self, data_path, batchsizes, buckets_limit=None, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0, id_blank=0):
 		self.num_signals_per_file = num_signals_per_file
 		self.num_signals_memory = num_buckets_to_store_memory
 		self.dev_split = dev_split
 		self.data_path = data_path
 		self.buckets_limit = buckets_limit
 		self.id_blank = 0
+		self.batchsizes = batchsizes
 
 		signal_path = os.path.join(data_path, "signal")
 		sentence_path = os.path.join(data_path, "sentence")
@@ -452,9 +453,9 @@ class Dataset(object):
 		config = chainer.config
 		self.fbank = fft.get_filterbanks(nfft=config.num_fft, nfilt=config.num_mel_filters, samplerate=config.sampling_rate)
 
-	def get_total_training_iterations(self, batchsizes):
+	def get_total_training_iterations(self):
 		num_buckets = len(self.buckets_signal)
-		batchsizes = batchsizes[:num_buckets]
+		batchsizes = self.batchsizes[:num_buckets]
 		itr = 0
 		for indices_group_train, batchsize in zip(self.buckets_indices_train, batchsizes):
 			for indices_train in indices_group_train:
@@ -600,7 +601,7 @@ class Dataset(object):
 		assert max_feature_length > 0
 		return extracted_features, sentences, max_feature_length, max_sentence_length
 
-	def get_minibatch(self, batchsizes, option=None, gpu=True):
+	def get_minibatch(self, option=None, gpu=True):
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
 		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
 
@@ -610,7 +611,7 @@ class Dataset(object):
 		indices = self.buckets_indices_train[bucket_idx][group_idx]
 		np.random.shuffle(indices)
 
-		batchsize = batchsizes[bucket_idx]
+		batchsize = self.batchsizes[bucket_idx]
 		batchsize = len(indices) if batchsize > len(indices) else batchsize
 		indices = indices[:batchsize]
 
