@@ -50,30 +50,27 @@ def augment_specgram(pspec, change_speech_rate=True, change_vocal_tract=True):
     return pspec
 
 def get_specgram(signal, samplerate=16000, winlen=0.025, winstep=0.01, nfft=512, preemph=0.97, winfunc=lambda x:np.ones((x,))):
-    signal = sigproc.preemphasis(signal,preemph)
+    signal = sigproc.preemphasis(signal, preemph)
     frames = sigproc.framesig(signal, winlen*samplerate, winstep*samplerate, winfunc)
-    pspec = sigproc.powspec(frames,nfft)
+    pspec = sigproc.powspec(frames, nfft)
     return pspec
 
-def compute_logmel(pspec, samplerate=16000, winlen=0.025, winstep=0.01, nfilt=26,nfft=512,lowfreq=0,highfreq=None,preemph=0.97,
-          winfunc=lambda x:np.ones((x,))):
-    highfreq= highfreq or samplerate/2
-    fb = get_filterbanks(nfilt,nfft,samplerate,lowfreq,highfreq)
-    feat = np.dot(pspec,fb.T) # compute the filterbank energies
-    feat = np.where(feat == 0,np.finfo(float).eps,feat) # if feat is zero, we get problems with log
+def compute_logmel(pspec, samplerate=16000, winlen=0.025, winstep=0.01, nfilt=26, nfft=512,lowfreq=0, highfreq=None, preemph=0.97,
+          winfunc=lambda x:np.ones((x,)), fbank=None):
+    highfreq = highfreq or samplerate/2
+    if fbank is None:
+        fbank = get_filterbanks(nfilt, nfft, samplerate, lowfreq, highfreq)
+    feat = np.dot(pspec,fbank.T)
+    feat = np.where(feat == 0, np.finfo(float).eps, feat)
     
     return np.log(feat)
 
-def get_filterbanks(nfilt=20,nfft=512,samplerate=16000,lowfreq=0,highfreq=None):
+def get_filterbanks(nfilt=20, nfft=512, samplerate=16000, lowfreq=0, highfreq=None):
     highfreq= highfreq or samplerate/2
     assert highfreq <= samplerate/2, "highfreq is greater than samplerate/2"
-    
-    # compute points evenly spaced in mels
     lowmel = hz2mel(lowfreq)
     highmel = hz2mel(highfreq)
     melpoints = np.linspace(lowmel,highmel,nfilt+2)
-    # our points are in Hz, but we use fft bins, so we have to convert
-    #  from Hz to fft bin number
     bin = np.floor((nfft+1)*mel2hz(melpoints)/samplerate)
 
     fbank = np.zeros([nfilt,nfft//2+1])
@@ -85,34 +82,18 @@ def get_filterbanks(nfilt=20,nfft=512,samplerate=16000,lowfreq=0,highfreq=None):
     return fbank                 
     
 def hz2mel(hz):
-    """Convert a value in Hertz to Mels
-
-    :param hz: a value in Hz. This can also be a np array, conversion proceeds element-wise.
-    :returns: a value in Mels. If an array was passed in, an identical sized array is returned.
-    """
     return 2595 * np.log10(1+hz/700.)
     
 def mel2hz(mel):
-    """Convert a value in Mels to Hertz
-
-    :param mel: a value in Mels. This can also be a np array, conversion proceeds element-wise.
-    :returns: a value in Hertz. If an array was passed in, an identical sized array is returned.
-    """
     return 700*(10**(mel/2595.0)-1)
 
 def compute_delta(feat, N):
-    """Compute delta features from a feature vector sequence.
-
-    :param feat: A np array of size (NUMFRAMES by number of features) containing features. Each row holds 1 feature vector.
-    :param N: For each frame, calculate delta features based on preceding and following N frames
-    :returns: A np array of size (NUMFRAMES by number of features) containing delta features. Each row holds 1 delta feature vector.
-    """
     if N < 1:
         raise ValueError('N must be an integer >= 1')
     NUMFRAMES = len(feat)
     denominator = 2 * sum([i**2 for i in range(1, N+1)])
     delta_feat = np.empty_like(feat)
-    padded = np.pad(feat, ((N, N), (0, 0)), mode='edge')   # padded version of feat
+    padded = np.pad(feat, ((N, N), (0, 0)), mode='edge')
     for t in range(NUMFRAMES):
-        delta_feat[t] = np.dot(np.arange(-N, N+1), padded[t : t+2*N+1]) / denominator   # [t : t+2*N+1] == [(N+t)-N : (N+t)+N+1]
+        delta_feat[t] = np.dot(np.arange(-N, N+1), padded[t : t+2*N+1]) / denominator
     return delta_feat

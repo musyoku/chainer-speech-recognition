@@ -23,9 +23,10 @@ def main():
 	dataset.dump_information()
 
 	augmentation = AugmentationOption()
-	augmentation.change_vocal_tract = False
-	augmentation.change_speech_rate = False
-	augmentation.add_noise = False
+	if args.augmentation:
+		augmentation.change_vocal_tract = True
+		augmentation.change_speech_rate = True
+		augmentation.add_noise = True
 
 	# ミニバッチを取れないものは除外
 	# GTX 1080 1台基準
@@ -82,5 +83,6 @@ if __name__ == "__main__":
 	parser.add_argument("--model-dir", "-m", type=str, default="model")
 	parser.add_argument("--buckets-limit", type=int, default=None)
 	parser.add_argument("--seed", "-seed", type=int, default=0)
+	parser.add_argument("--augmentation", "-augmentation", default=False, action="store_true")
 	args = parser.parse_args()
 	main()

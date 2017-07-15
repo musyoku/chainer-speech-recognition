@@ -63,23 +63,6 @@ def get_bucket_idx(signal, sampling_rate=16000, split_sec=0.5):
 	divider = sampling_rate * split_sec
 	return int(len(signal) // divider)
 
-def extract_features(signal, sampling_rate=16000, num_fft=512, frame_width=0.032, frame_shift=0.01, num_mel_filters=40, window_func=lambda x:np.hanning(x), using_delta=True, using_delta_delta=True):
-	# メルフィルタバンク出力の対数を計算
-	logmel, energy = fbank(signal, sampling_rate, nfft=num_fft, winlen=frame_width, winstep=frame_shift, nfilt=num_mel_filters, winfunc=window_func)
-	logmel = np.log(logmel)
-
-	# ΔとΔΔを計算
-	delta = (np.roll(logmel, -1, axis=0) - logmel) / 2 if using_delta else None
-	delta_delta = (np.roll(delta, -1, axis=0) - delta) / 2 if using_delta_delta else None
-
-	# 不要な部分を削除
-	# ΔΔまで計算すると末尾の2つは正しくない値になる
-	logmel = logmel[:-2].T
-	delta = delta[:-2].T if using_delta else None
-	delta_delta = delta_delta[:-2].T if using_delta_delta else None
-
-	return logmel, delta, delta_delta
-
 def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, data_limit, num_signals_per_file=1000):
 	assert len(wav_paths) > 0
 	assert len(transcription_paths) > 0
@@ -466,6 +449,9 @@ class Dataset(object):
 		self.bucket_distribution = np.asarray(buckets_num_group) / total_groups
 		self.cached_indices = []
 
+		config = chainer.config
+		self.fbank = fft.get_filterbanks(nfft=config.num_fft, nfilt=config.num_mel_filters, samplerate=config.sampling_rate)
+
 	def get_total_training_iterations(self, batchsizes):
 		num_buckets = len(self.buckets_signal)
 		batchsizes = batchsizes[:num_buckets]
@@ -593,7 +579,7 @@ class Dataset(object):
 			if option is not None and option.using_augmentation():
 				specgram = fft.augment_specgram(specgram, option.change_speech_rate, option.change_vocal_tract)
 
-			logmel = fft.compute_logmel(specgram, config.sampling_rate, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, nfilt=config.num_mel_filters, winfunc=config.window_func)
+			logmel = fft.compute_logmel(specgram, config.sampling_rate, fbank=self.fbank, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, nfilt=config.num_mel_filters, winfunc=config.window_func)
 			logmel, delta, delta_delta = fft.compute_deltas(logmel)
 			logmel = logmel.T
 			delta = delta.T
