@@ -46,20 +46,24 @@ def main():
 		iterator = DevMinibatchIterator(dataset, batchsizes, augmentation, gpu=args.gpu_device >= 0)
 		buckets_errors = []
 		for batch in iterator:
-			x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx = batch
+			try:
+				x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx = batch
 
-			sys.stdout.write("\r" + stdout.CLEAR)
-			sys.stdout.write("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
-			sys.stdout.flush()
+				sys.stdout.write("\r" + stdout.CLEAR)
+				sys.stdout.write("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
+				sys.stdout.flush()
 
-			y_batch = model(x_batch, split_into_variables=False)
-			y_batch = xp.argmax(y_batch.data, axis=2)
-			error = compute_minibatch_error(y_batch, t_batch, BLANK)
+				y_batch = model(x_batch, split_into_variables=False)
+				y_batch = xp.argmax(y_batch.data, axis=2)
+				error = compute_minibatch_error(y_batch, t_batch, BLANK)
 
-			while bucket_idx >= len(buckets_errors):
-				buckets_errors.append([])
+				while bucket_idx >= len(buckets_errors):
+					buckets_errors.append([])
 
-			buckets_errors[bucket_idx].append(error)
+				buckets_errors[bucket_idx].append(error)
+
+			except Exception as e:
+				print(" ", bucket_idx, str(e))
 
 		avg_errors = []
 		for errors in buckets_errors:

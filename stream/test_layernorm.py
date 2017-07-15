@@ -10,7 +10,7 @@ from chainer import gradient_check
 from chainer import testing
 from chainer.testing import attr
 from chainer.testing import condition
-from layernorm import normalize_layer, NormalizeLayer
+from .layernorm import normalize_layer, NormalizeLayer
 
 def _batch_normalization(expander, gamma, beta, x, mean, var):
 	mean = mean[expander]

@@ -98,9 +98,6 @@ def main():
 					# 更新
 					optimizer.update(lossfun=lambda: loss)
 
-				except KeyboardInterrupt:
-					loop.close()
-					exit()
 				except Exception as e:
 					print(" ", bucket_idx, str(e))
 

@@ -1,8 +1,8 @@
 import chainer, math
 from chainer import functions, cuda, links, variable
 from chainer.links import *
-from convolution_2d import Convolution2D as WeightnormConvolution2D
-from layernorm import normalize_layer
+from .convolution_2d import Convolution2D as WeightnormConvolution2D
+from .layernorm import normalize_layer
 
 # Standar functions
 
