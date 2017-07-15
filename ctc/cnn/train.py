@@ -6,58 +6,15 @@ import sys, argparse, time, cupy, math, os
 import chainer
 import numpy as np
 import chainer.functions as F
-from chainer import optimizers, cuda, serializers
+from chainer import cuda, serializers
+import asyncio
 sys.path.append("../../")
 import config
 from error import compute_minibatch_error
 from dataset import Dataset, cache_path, get_vocab, AugmentationOption, DevMinibatchIterator
 from model import load_model, save_model, build_model
 from util import stdout, print_bold
-
-def get_current_learning_rate(opt):
-	if isinstance(opt, optimizers.NesterovAG):
-		return opt.lr
-	if isinstance(opt, optimizers.MomentumSGD):
-		return opt.lr
-	if isinstance(opt, optimizers.SGD):
-		return opt.lr
-	if isinstance(opt, optimizers.Adam):
-		return opt.alpha
-	raise NotImplementedError()
-
-def get_optimizer(name, lr, momentum):
-	if name == "sgd":
-		return optimizers.SGD(lr=lr)
-	if name == "msgd":
-		return optimizers.MomentumSGD(lr=lr, momentum=momentum)
-	if name == "nesterov":
-		return optimizers.NesterovAG(lr=lr, momentum=momentum)
-	if name == "adam":
-		return optimizers.Adam(alpha=lr, beta1=momentum)
-	raise NotImplementedError()
-
-def decay_learning_rate(opt, factor, final_value):
-	if isinstance(opt, optimizers.NesterovAG):
-		if opt.lr <= final_value:
-			return final_value
-		opt.lr *= factor
-		return
-	if isinstance(opt, optimizers.SGD):
-		if opt.lr <= final_value:
-			return final_value
-		opt.lr *= factor
-		return
-	if isinstance(opt, optimizers.MomentumSGD):
-		if opt.lr <= final_value:
-			return final_value
-		opt.lr *= factor
-		return
-	if isinstance(opt, optimizers.Adam):
-		if opt.alpha <= final_value:
-			return final_value
-		opt.alpha *= factor
-		return
-	raise NotImplementedError()
+from optim import get_current_learning_rate, decay_learning_rate, get_optimizer
 
 def formatted_error(error_values):
 	errors = []
@@ -84,7 +41,6 @@ def main():
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	total_iterations_train = dataset.get_total_training_iterations(batchsizes)
-
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
@@ -142,6 +98,9 @@ def main():
 					# 更新
 					optimizer.update(lossfun=lambda: loss)
 
+				except KeyboardInterrupt:
+					loop.close()
+					exit()
 				except Exception as e:
 					print(" ", bucket_idx, str(e))
 
@@ -156,7 +115,7 @@ def main():
 
 		# バリデーション
 		with chainer.using_config("train", False):
-			iterator = DevMinibatchIterator(dataset, batchsizes, augmentation, gpu=args.gpu_device >= 0)
+			iterator = DevMinibatchIterator(dataset, batchsizes, AugmentationOption(), gpu=args.gpu_device >= 0)
 			buckets_errors = []
 			for batch in iterator:
 				try:
