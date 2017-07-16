@@ -21,7 +21,7 @@ def main():
 
 	# ミニバッチを取れないものは除外
 	# GTX 1080 1台基準
-	batchsizes = [96, 64, 64, 64, 64, 64, 64, 64, 48, 48, 48, 32, 32, 24, 24, 24]
+	batchsizes = [96, 64, 64, 64, 64, 64, 64, 64, 48, 48, 48, 32, 32, 24, 24, 24, 24, 24, 24, 24, 24, 24]
 
 	augmentation = AugmentationOption()
 	if args.augmentation:
@@ -45,13 +45,16 @@ def main():
 		for batch in iterator:
 			x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, progress = batch
 
+			if args.filter_bucket_id and bucket_idx != args.filter_bucket_id:
+				continue
+
 			sys.stdout.write("\r" + stdout.CLEAR)
 			sys.stdout.write("computing CER of bucket {} ({} %)".format(bucket_idx + 1, int(progress * 100)))
 			sys.stdout.flush()
 
 			y_batch = model(x_batch, split_into_variables=False)
 			y_batch = xp.argmax(y_batch.data, axis=2)
-			error = compute_minibatch_error(y_batch, t_batch, BLANK, print_sequences=False, vocab=vocab_inv)
+			error = compute_minibatch_error(y_batch, t_batch, BLANK, print_sequences=True, vocab=vocab_inv)
 
 			while bucket_idx >= len(buckets_errors):
 				buckets_errors.append([])
@@ -74,6 +77,7 @@ if __name__ == "__main__":
 	parser.add_argument("--gpu-device", "-g", type=int, default=0) 
 	parser.add_argument("--model-dir", "-m", type=str, default="model")
 	parser.add_argument("--buckets-limit", type=int, default=None)
+	parser.add_argument("--filter-bucket-id", type=int, default=None)
 	parser.add_argument("--seed", "-seed", type=int, default=0)
 	parser.add_argument("--augmentation", "-augmentation", default=False, action="store_true")
 	args = parser.parse_args()

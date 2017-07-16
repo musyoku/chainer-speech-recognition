@@ -56,7 +56,7 @@ def compute_minibatch_error(y_batch, t_batch, BLANK, print_sequences=False, voca
 			target_str = ""
 			for char_id in target_sequence:
 				target_str += vocab[char_id]
-			print("target:	" + target_str)
+			print("true:	" + target_str)
 
 	return sum_error / len(y_batch)
 
