@@ -134,13 +134,8 @@ def main():
 						# 更新
 						optimizer.update(lossfun=lambda: loss)
 
-						# 統計
-						if args.multiprocessing:
-							dataset.increment_num_updates(bucket_idx, group_idx)
-
 					except Exception as e:
 						print(" ", bucket_idx, str(e))
-
 
 					sum_loss += loss_value
 					sys.stdout.write("\r" + stdout.CLEAR)
@@ -148,10 +143,6 @@ def main():
 					sys.stdout.flush()
 
 				current_iteration += len(minibatches)
-
-				sys.stdout.write("\r" + stdout.CLEAR)
-				sys.stdout.flush()
-				dataset.dump_num_updates()
 
 		sys.stdout.write("\r" + stdout.CLEAR)
 		sys.stdout.flush()

@@ -1,4 +1,6 @@
+import sys
 import numpy as np
+from util import print_bold, stdout
 
 def compute_character_error_rate(r, h):
 	if len(r) == 0:
@@ -19,10 +21,14 @@ def compute_character_error_rate(r, h):
 				d[i][j] = min(substitute, insert, delete)
 	return float(d[len(r)][len(h)]) / len(r)
 
-def compute_minibatch_error(y_batch, t_batch, BLANK):
+def compute_minibatch_error(y_batch, t_batch, BLANK, print_sequences=False, vocab=None):
 	sum_error = 0
 
-	for argmax_sequence, true_sequence in zip(y_batch, t_batch):
+	if print_sequences and vocab is not None:
+		sys.stdout.write("\r" + stdout.CLEAR)
+		sys.stdout.flush()
+
+	for batch_idx, (argmax_sequence, true_sequence) in enumerate(zip(y_batch, t_batch)):
 		target_sequence = []
 		for token in true_sequence:
 			if token == BLANK:
@@ -38,7 +44,19 @@ def compute_minibatch_error(y_batch, t_batch, BLANK):
 				continue
 			pred_seqence.append(int(token))
 			prev_token = token
+
 		sum_error += compute_character_error_rate(target_sequence, pred_seqence)
+
+		if print_sequences and vocab is not None:
+			print("#{}".format(batch_idx + 1))
+			pred_str = ""
+			for char_id in pred_seqence:
+				pred_str += vocab[char_id]
+			print_bold("pred:	" + pred_str)
+			target_str = ""
+			for char_id in target_sequence:
+				target_str += vocab[char_id]
+			print("target:	" + target_str)
 
 	return sum_error / len(y_batch)
 
