@@ -2,7 +2,7 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import sys, argparse, time, cupy, math, os
+import sys, argparse, time, cupy, math, os, binascii
 import chainer
 import numpy as np
 import chainer.functions as F
@@ -23,6 +23,7 @@ def formatted_error(error_values):
 	return errors
 
 def preloading_loop(dataset, augmentation, num_load, queue):
+	np.random.seed(int(binascii.hexlify(os.urandom(4)), 16))
 	for i in range(num_load):
 		queue.put(dataset.get_minibatch(option=augmentation, gpu=False))
 	return queue
@@ -36,7 +37,8 @@ def main():
 	# GTX 1080 1台基準
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
 
-	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, id_blank=BLANK)
+	cache_size = 0 if args.multiprocessing else 200	# マルチプロセスの場合キャッシュごとコピーされるのでメモリを圧迫する
+	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, id_blank=BLANK, num_buckets_to_store_memory=cache_size)
 	dataset.dump_information()
 
 	augmentation = AugmentationOption()
@@ -112,7 +114,7 @@ def main():
 
 				for batch_idx, data in enumerate(minibatches):
 					try:
-						x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx = data
+						x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx = data
 
 						if True:
 							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
@@ -132,6 +134,10 @@ def main():
 						# 更新
 						optimizer.update(lossfun=lambda: loss)
 
+						# 統計
+						if args.multiprocessing:
+							dataset.increment_num_updates(bucket_idx, group_idx)
+
 					except Exception as e:
 						print(" ", bucket_idx, str(e))
 
@@ -142,6 +148,10 @@ def main():
 					sys.stdout.flush()
 
 				current_iteration += len(minibatches)
+
+				sys.stdout.write("\r" + stdout.CLEAR)
+				sys.stdout.flush()
+				dataset.dump_num_updates()
 
 		sys.stdout.write("\r" + stdout.CLEAR)
 		sys.stdout.flush()

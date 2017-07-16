@@ -393,6 +393,7 @@ class Dataset(object):
 		buckets_signal = []
 		buckets_sentence = []
 		buckets_num_data = []
+		buckets_num_updates = []
 		for filename in signal_files:
 			pattern = r"([0-9]+)_([0-9]+)_([0-9]+)\.bucket"
 			m = re.match(pattern , filename)
@@ -404,10 +405,12 @@ class Dataset(object):
 					buckets_signal.append([])
 					buckets_sentence.append([])
 					buckets_num_data.append([])
+					buckets_num_updates.append([])
 				while len(buckets_signal[bucket_idx]) <= group_idx:
 					buckets_signal[bucket_idx].append(None)
 					buckets_sentence[bucket_idx].append(None)
 					buckets_num_data[bucket_idx].append(0)
+					buckets_num_updates[bucket_idx].append(0)
 				buckets_num_data[bucket_idx][group_idx] = num_data
 
 		if buckets_limit is not None:
@@ -442,6 +445,7 @@ class Dataset(object):
 		self.buckets_sentence = buckets_sentence
 		self.buckets_num_group = buckets_num_group
 		self.buckets_num_data = buckets_num_data
+		self.buckets_num_updates = buckets_num_updates
 		self.buckets_indices_train = buckets_indices_train
 		self.buckets_indices_dev = buckets_indices_dev
 
@@ -607,6 +611,8 @@ class Dataset(object):
 
 		signal_list = self.get_signals_for_bucket_and_group(bucket_idx, group_idx)
 		sentence_list = self.get_sentences_for_bucket_and_group(bucket_idx, group_idx)
+
+		self.increment_num_updates(bucket_idx, group_idx)
 	
 		indices = self.buckets_indices_train[bucket_idx][group_idx]
 		np.random.shuffle(indices)
@@ -618,7 +624,17 @@ class Dataset(object):
 		extracted_features, sentences, max_feature_length, max_sentence_length = self.extract_features_by_indices(indices, signal_list, sentence_list, option=option)
 		x_batch, x_length_batch, t_batch, t_length_batch = self.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
 
-		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx
+		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx
+
+	def increment_num_updates(self, bucket_idx, group_idx):
+		self.buckets_num_updates[bucket_idx][group_idx] += 1
+
+	def dump_num_updates(self):
+		for bucket_idx in range(len(self.buckets_signal)):
+			print_bold("bucket " + str(bucket_idx))
+			buckets = self.buckets_num_updates[bucket_idx]
+			print(buckets)
+			print(sum(buckets) / len(buckets))
 
 def mkdir(d):
 	try:
