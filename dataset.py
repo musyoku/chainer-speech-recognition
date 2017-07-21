@@ -424,6 +424,12 @@ def extract_features_by_indices(indices, signal_list, sentence_list, option=None
 			specgram = fft.augment_specgram(specgram, option.change_speech_rate, option.change_vocal_tract)
 
 		logmel = fft.compute_logmel(specgram, config.sampling_rate, fbank=fbank, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, nfilt=config.num_mel_filters, winfunc=config.window_func)
+
+		# データ拡大
+		if option is not None and option.using_augmentation():
+			if option.add_noise:
+				logmel += np.random.normal(0, 0.2, size=logmel.shape)
+
 		logmel, delta, delta_delta = fft.compute_deltas(logmel)
 
 		logmel = logmel.T
