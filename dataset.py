@@ -428,7 +428,7 @@ def extract_features_by_indices(indices, signal_list, sentence_list, option=None
 		# データ拡大
 		if option is not None and option.using_augmentation():
 			if option.add_noise:
-				logmel += np.random.normal(0, 0.2, size=logmel.shape)
+				logmel += np.random.normal(0, 0.6, size=logmel.shape)
 
 		logmel, delta, delta_delta = fft.compute_deltas(logmel)
 
