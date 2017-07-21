@@ -13,17 +13,17 @@ from chainer import cuda
 from util import stdout, print_bold
 
 wav_path_list = [
-	"/home/stark/sandbox/CSJ/WAV/core",
-	"/home/stark/sandbox/CSJ/WAV/noncore",
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/stark/sandbox/CSJ_/core",
-	"/home/stark/sandbox/CSJ_/noncore",
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/stark/sandbox/wav"
+cache_path = "/home/aibo/sandbox/wav"
 
-wav_path_test = "/home/stark/sandbox/CSJ/WAV/test"
-trn_path_test = "/home/stark/sandbox/CSJ_/test"
+wav_path_test = "/home/aibo/sandbox/CSJ/WAV/test"
+trn_path_test = "/home/aibo/sandbox/CSJ_/test"
 
 def get_vocab():
 	characters = [
