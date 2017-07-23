@@ -48,6 +48,7 @@ def main():
 		augmentation.add_noise = True
 
 	total_iterations_train = dataset.get_total_training_iterations()
+	total_iterations_train = 2
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
@@ -206,8 +207,8 @@ if __name__ == "__main__":
 	parser.add_argument("--multiprocessing", "-multi", default=False, action="store_true")
 	
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
-	parser.add_argument("--ndim-h", "-dh", type=int, default=320)
-	parser.add_argument("--ndim-dense", "-dd", type=int, default=1024)
+	parser.add_argument("--ndim-h", "-dh", type=int, default=128)
+	parser.add_argument("--ndim-dense", "-dd", type=int, default=320)
 	parser.add_argument("--num-conv-layers", "-nconv", type=int, default=4)
 	parser.add_argument("--num-dense-layers", "-ndense", type=int, default=4)
 	parser.add_argument("--wgain", "-w", type=float, default=1)

@@ -34,6 +34,7 @@ def save_model(dirname, model):
 		"dropout": config.dropout,
 		"weightnorm": config.weightnorm,
 		"architecture": config.architecture,
+		"num_conv_layers": config.num_conv_layers,
 		"wgain": config.wgain,
 	}
 	with open(param_filename, "w") as f:
