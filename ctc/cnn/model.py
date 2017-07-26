@@ -13,7 +13,6 @@ import stream.stream as nn
 
 def save_model(dirname, model):
 	model_filename = dirname + "/model.hdf5"
-	param_filename = dirname + "/params.json"
 
 	try:
 		os.mkdir(dirname)
@@ -23,6 +22,14 @@ def save_model(dirname, model):
 	if os.path.isfile(model_filename):
 		os.remove(model_filename)
 	serializers.save_hdf5(model_filename, model)
+
+def save_params(dirname):
+	param_filename = dirname + "/params.json"
+
+	try:
+		os.mkdir(dirname)
+	except:
+		pass
 
 	config = chainer.config
 	params = {
@@ -66,6 +73,70 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 	model = AcousticModel()
 	pad = kernel_size[1] - 1
 	kernel_height = int(math.ceil((num_mel_filters - 2) / 3))
+
+
+
+
+
+
+
+
+
+
+	if architecture == "zhang":
+		# first layer
+		model.layer(
+			nn.Convolution2D(ndim_audio_features, ndim_h * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+			lambda x: x[..., :-pad],
+			nn.Maxout(2),
+			nn.Dropout(dropout),
+			nn.MaxPooling2D(ksize=(3, 1)),
+		)
+		# conv layers
+		for _ in xrange(num_conv_layers):
+			model.layer(
+				nn.Convolution2D(ndim_h, ndim_h * 2, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+				lambda x: x[..., :-pad],
+				nn.Maxout(2),
+				nn.Dropout(dropout),
+			)
+		model.layer(
+			nn.Convolution2D(ndim_h, ndim_h * 4, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+			lambda x: x[..., :-pad],
+			nn.Maxout(2),
+			nn.Dropout(dropout),
+		)
+		# dense layers
+		model.layer(
+			nn.Convolution2D(ndim_h * 2, ndim_dense * 2, ksize=(kernel_height, 1), stride=1, pad=0, weightnorm=weightnorm),
+			nn.Maxout(2),
+			nn.Dropout(dropout),
+		)
+		model.layer(
+			nn.Convolution2D(ndim_dense, ndim_dense * 2, ksize=1, stride=1, pad=0, weightnorm=weightnorm),
+			nn.Maxout(2),
+			nn.Dropout(dropout),
+		)
+		model.layer(
+			nn.Convolution2D(ndim_dense, vocab_size, ksize=1, stride=1, pad=0, weightnorm=weightnorm),
+			nn.LayerNormalization(None),
+		)
+		return model
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		
 
 	if architecture == "zhang":
 		# first layer

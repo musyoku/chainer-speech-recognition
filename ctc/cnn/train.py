@@ -12,7 +12,7 @@ sys.path.append("../../")
 import config
 from error import compute_minibatch_error
 from dataset import Dataset, cache_path, get_vocab, AugmentationOption, DevMinibatchIterator
-from model import load_model, save_model, build_model
+from model import load_model, save_model, build_model, save_params
 from util import stdout, print_bold
 from optim import get_current_learning_rate, decay_learning_rate, get_optimizer
 
@@ -48,7 +48,6 @@ def main():
 		augmentation.add_noise = True
 
 	total_iterations_train = dataset.get_total_training_iterations()
-	total_iterations_train = 2
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
@@ -61,6 +60,7 @@ def main():
 	chainer.global_config.weightnorm = args.weightnorm
 	chainer.global_config.wgain = args.wgain
 	chainer.global_config.architecture = args.architecture
+	save_params(args.model_dir)
 
 	model = load_model(args.model_dir)
 	if model is None:

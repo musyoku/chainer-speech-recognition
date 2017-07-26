@@ -13,17 +13,17 @@ from chainer import cuda
 from util import stdout, print_bold
 
 wav_path_list = [
-	"/home/aibo/sandbox/CSJ/WAV/core",
-	"/home/aibo/sandbox/CSJ/WAV/noncore",
+	"/home/stark/sandbox/CSJ/WAV/core",
+	"/home/stark/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/aibo/sandbox/CSJ_/core",
-	"/home/aibo/sandbox/CSJ_/noncore",
+	"/home/stark/sandbox/CSJ_/core",
+	"/home/stark/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/aibo/sandbox/wav"
+cache_path = "/home/stark/sandbox/wav"
 
-wav_path_test = "/home/aibo/sandbox/CSJ/WAV/test"
-trn_path_test = "/home/aibo/sandbox/CSJ_/test"
+wav_path_test = "/home/stark/sandbox/CSJ/WAV/test"
+trn_path_test = "/home/stark/sandbox/CSJ_/test"
 
 def get_vocab():
 	characters = [
@@ -541,6 +541,10 @@ class TestMinibatchIterator(object):
 		self.mean = np.load(mean_filename)[None, ...].astype(np.float32)
 		self.std = np.load(std_filename)[None, ...].astype(np.float32)
 
+	def reset(self):
+		self.bucket_idx = 0
+		self.pos = 0
+
 	def __iter__(self):
 		return self
 
@@ -551,6 +555,11 @@ class TestMinibatchIterator(object):
 			raise StopIteration()
 
 		num_data = len(self.buckets_signal[bucket_idx])
+		while num_data == 0:
+			bucket_idx += 1
+			if bucket_idx >= len(self.buckets_signal):
+				raise StopIteration()
+			num_data = len(self.buckets_signal[bucket_idx])
 
 		batchsize = self.batchsizes[bucket_idx]
 		batchsize = num_data - self.pos if batchsize > num_data - self.pos else batchsize
