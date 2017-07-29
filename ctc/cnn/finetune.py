@@ -108,7 +108,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--total-epoch", "-e", type=int, default=1000)
 	parser.add_argument("--grad-clip", "-gc", type=float, default=1) 
-	parser.add_argument("--weight-decay", "-wd", type=float, default=1e-5) 
+	parser.add_argument("--weight-decay", "-wd", type=float, default=0) 
 	parser.add_argument("--learning-rate", "-lr", type=float, default=0.00001)
 	parser.add_argument("--lr-decay", "-decay", type=float, default=0.95)
 	parser.add_argument("--momentum", "-mo", type=float, default=0.9)
