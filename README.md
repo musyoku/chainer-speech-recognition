@@ -37,6 +37,7 @@ pip install acoustics
 - [x] 大規模データの読み出し
 - [x] 学習と読み出しの並列化
 - [ ] 文字誤り率10%以下
+- [ ] トライフォンの状態共有
 
 ## Tools
 
@@ -44,6 +45,7 @@ pip install acoustics
 
 ## References
 
+- [統計的手法を用いた音声モデリングの高度化とその音声認識への応用](https://www.gavo.t.u-tokyo.ac.jp/~mine/japanese/nlp+slp/IPSJ-MGN451004.pdf)
 - [形態素解析も辞書も言語モデルもいらないend-to-end音声認識](https://www.slideshare.net/t_koshikawa/endtoend)
 - [『日本語話し言葉コーパス』を用いた音声認識の進展](http://sap.ist.i.kyoto-u.ac.jp/lab/bib/report/KAW-orc04.pdf)
 - [Deep Neural Networkに基づく日本語音声認識の基礎評価](https://ipsj.ixsq.nii.ac.jp/ej/?action=repository_uri&item_id=94549&file_id=1&file_no=1)
