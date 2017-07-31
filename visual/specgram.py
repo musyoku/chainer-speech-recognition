@@ -1,14 +1,20 @@
 # coding: utf-8
-import pylab, argparse, codecs, os
+import pylab, argparse, codecs, os, sys
 import scipy.signal
 import scipy.io.wavfile as wavfile
 import numpy as np
 from matplotlib import pyplot as plt
-import fft
-import scipy.io.wavfile as wavfile
 from acoustics import generator
+sys.path.append("../")
+import fft
 
-def plot_features(out_dir, signal, sampling_rate, filename):
+def normalize(array):
+	mean = np.mean(array)
+	stddev = np.std(array)
+	array = (array - mean) / stddev
+	return array
+
+def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False):
 	try:
 		os.makedirs(out_dir)
 	except:
@@ -22,12 +28,20 @@ def plot_features(out_dir, signal, sampling_rate, filename):
 	# wavfile.write(os.path.join(out_dir, filename + ".wav"), sampling_rate, signal.astype(np.int16))
 
 	specgram = fft.get_specgram(signal, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, winfunc=lambda x:np.hanning(x))
-	
+	log_specgram = np.log(specgram)
+	mean_log_specgram = np.mean(log_specgram, axis=0)
+	if apply_cmn:
+		specgram = np.exp(np.log(specgram) - mean_log_specgram)
+
 	# data augmentation
 	# specgram = fft.augment_specgram(specgram)
 
 	logmel = fft.compute_logmel(specgram, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, nfilt=40, lowfreq=0, winfunc=lambda x:np.hanning(x))
 	logmel, delta, delta_delta = fft.compute_deltas(logmel)
+	if apply_cmn:
+		logmel = normalize(logmel)
+		delta = normalize(delta)
+		delta_delta = normalize(delta_delta)
 
 	_plot_features(out_dir, signal, sampling_rate, logmel, delta, delta_delta, specgram, filename)
 
@@ -138,14 +152,15 @@ def split_audio(wav_filename, trn_filename):
 	return sampling_rate, features
 
 def main(args):
-	sampling_rate, features = split_audio(args.wav_filename, args.transcription_filename)
+	sampling_rate, features = split_audio(args.wav_filename, args.trn_filename)
 	for idx, signal in enumerate(features):
-		plot_features(args.out_dir, signal, sampling_rate, "{}.png".format(idx+1))
+		plot_features(args.out_dir, signal, sampling_rate, "{}.png".format(idx + 1), apply_cmn=False)
+		plot_features(args.out_dir, signal, sampling_rate, "{}.cmn.png".format(idx + 1), apply_cmn=True)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--wav-filename", "-wav", type=str)
-	parser.add_argument("--transcription-filename", "-trn", type=str)
+	parser.add_argument("--trn-filename", "-trn", type=str)
 	parser.add_argument("--out-dir", "-out", type=str)
 	args = parser.parse_args()
 	main(args)

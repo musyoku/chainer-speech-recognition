@@ -7,3 +7,4 @@
 !*.pyx
 !*.md
 !.gitignore
+!.triphone.list

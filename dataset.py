@@ -13,53 +13,17 @@ from chainer import cuda
 from util import stdout, print_bold
 
 wav_path_list = [
-	"/home/stark/sandbox/CSJ/WAV/core",
-	"/home/stark/sandbox/CSJ/WAV/noncore",
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/stark/sandbox/CSJ_/core",
-	"/home/stark/sandbox/CSJ_/noncore",
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/stark/sandbox/wav"
+cache_path = "/home/aibo/sandbox/wav"
 
-wav_path_test = "/home/stark/sandbox/CSJ/WAV/test"
-trn_path_test = "/home/stark/sandbox/CSJ_/test"
-
-def get_vocab():
-	characters = [
-		u"_",	# blank
-		u"あ",u"い",u"う",u"え",u"お",
-		u"か",u"き",u"く",u"け",u"こ",
-		u"さ",u"し",u"す",u"せ",u"そ",
-		u"た",u"ち",u"つ",u"て",u"と",
-		u"な",u"に",u"ぬ",u"ね",u"の",
-		u"は",u"ひ",u"ふ",u"へ",u"ほ",
-		u"ま",u"み",u"む",u"め",u"も",
-		u"や",u"ゆ",u"よ",
-		u"ら",u"り",u"る",u"れ",u"ろ",
-		u"わ",u"を",u"ん",
-		u"が",u"ぎ",u"ぐ",u"げ",u"ご",
-		u"ざ",u"じ",u"ず",u"ぜ",u"ぞ",
-		u"だ",u"ぢ",u"づ",u"で",u"ど",
-		u"ば",u"び",u"ぶ",u"べ",u"ぼ",
-		u"ぱ",u"ぴ",u"ぷ",u"ぺ",u"ぽ",
-		u"ぁ",u"ぃ",u"ぅ",u"ぇ",u"ぉ",
-		u"ゃ",u"ゅ",u"ょ",
-		u"っ",
-		u"ー",
-	]
-
-	vocab = {}
-	for char in characters:
-		vocab[char] = len(vocab)
-
-	vocab_inv = {}
-	for char, char_id in vocab.items():
-		vocab_inv[char_id] = char
-
-	id_blank = 0
-
-	return vocab, vocab_inv, id_blank
+wav_path_test = "/home/aibo/sandbox/CSJ/WAV/test"
+trn_path_test = "/home/aibo/sandbox/CSJ_/test"
 
 def get_bucket_idx(signal, sampling_rate=16000, split_sec=0.5):
 	divider = sampling_rate * split_sec
