@@ -29,9 +29,8 @@ def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False):
 
 	specgram = fft.get_specgram(signal, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, winfunc=lambda x:np.hanning(x))
 	log_specgram = np.log(specgram)
-	mean_log_specgram = np.mean(log_specgram, axis=0)
 	if apply_cmn:
-		specgram = np.exp(np.log(specgram) - mean_log_specgram)
+		specgram = np.exp(np.log(specgram) - np.mean(log_specgram, axis=0))
 
 	# data augmentation
 	# specgram = fft.augment_specgram(specgram)
