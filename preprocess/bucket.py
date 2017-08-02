@@ -53,6 +53,7 @@ def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 			signal = audio[start_frame:end_frame]
 
 			assert len(signal) == end_frame - start_frame
+			assert len(signal) > config.num_fft
 
 			# channelに従って選択
 			if signal.ndim == 2:
@@ -142,7 +143,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		buckets_file_indices[bucket_idx] += 1
 		return True
 
-	def compute_mean_and_std(bucket_idx, normalize=True):
+	def compute_mean_and_std(bucket_idx, pre_normalization=True):
 		num_signals = len(buckets_signal[bucket_idx])
 		assert num_signals > 0
 		mean = 0
@@ -152,15 +153,19 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			spec = fft.get_specgram(signal, config.sampling_rate, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, winfunc=config.window_func)
 
 			# ケプストラム平均正規化
-			if normalize:
+			if pre_normalization:
 				spec = np.exp(np.log(spec) - np.mean(np.log(spec), axis=0))
 
 			logmel = fft.compute_logmel(spec, config.sampling_rate, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, nfilt=config.num_mel_filters, winfunc=config.window_func)
 			logmel, delta, delta_delta = fft.compute_deltas(logmel)
 
+			assert logmel.shape[0] > 0
+			assert delta.shape[0] > 0
+			assert delta_delta.shape[0] > 0
+
 			# 発話ごとに平均0、分散1にする
 			# 発話ごとの場合データが少ないので全軸で取らないとノイズが増大する
-			if normalize:
+			if pre_normalization:
 				logmel = normalize_feature(logmel)
 				delta = normalize_feature(delta)
 				delta_delta = normalize_feature(delta_delta)

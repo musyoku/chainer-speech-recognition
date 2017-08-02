@@ -13,23 +13,23 @@ from chainer import cuda
 from util import stdout, print_bold
 
 wav_path_list = [
-	"/home/stark/sandbox/CSJ/WAV/core",
-	"/home/stark/sandbox/CSJ/WAV/noncore",
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/stark/sandbox/CSJ_/core",
-	"/home/stark/sandbox/CSJ_/noncore",
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/stark/sandbox/wav"
+cache_path = "/home/aibo/sandbox/wav"
 
-wav_path_test = "/home/stark/sandbox/CSJ/WAV/test"
-trn_path_test = "/home/stark/sandbox/CSJ_/test"
+wav_path_test = "/home/aibo/sandbox/CSJ/WAV/test"
+trn_path_test = "/home/aibo/sandbox/CSJ_/test"
 
 def get_bucket_idx(signal, sampling_rate=16000, split_sec=0.5):
 	divider = sampling_rate * split_sec
 	return int(len(signal) // divider)
 
-def load_testing_buckets(wav_dir, trn_dir, buckets_limit=None):
+def load_test_buckets(wav_dir, trn_dir, buckets_limit=None):
 	config = chainer.config
 	buckets_signal = []
 	buckets_sentence = []
@@ -486,7 +486,7 @@ class TestMinibatchIterator(object):
 		self.bucket_idx = 0
 		self.pos = 0
 		self.id_blank = id_blank
-		self.buckets_signal, self.buckets_sentence = load_testing_buckets(wav_dir, trn_dir, buckets_limit)
+		self.buckets_signal, self.buckets_sentence = load_test_buckets(wav_dir, trn_dir, buckets_limit)
 
 		assert len(self.buckets_signal) > 0
 		assert len(self.buckets_sentence) > 0

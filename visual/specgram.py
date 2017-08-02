@@ -14,7 +14,7 @@ def normalize(array):
 	array = (array - mean) / stddev
 	return array
 
-def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False):
+def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False, global_normalization=False):
 	try:
 		os.makedirs(out_dir)
 	except:
@@ -41,6 +41,16 @@ def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False):
 		logmel = normalize(logmel)
 		delta = normalize(delta)
 		delta_delta = normalize(delta_delta)
+
+	if global_normalization:
+		from dataset import cache_path
+		mean = np.load(os.path.join(cache_path, "mean.npy")).astype(np.float32)[..., 0]
+		std = np.load(os.path.join(cache_path, "std.npy")).astype(np.float32)[..., 0]
+		print(mean)
+		logmel = (logmel - mean[0]) / std[0]
+		delta = (delta - mean[0]) / std[0]
+		delta_delta = (delta_delta - mean[0]) / std[0]
+		
 
 	_plot_features(out_dir, signal, sampling_rate, logmel, delta, delta_delta, specgram, filename)
 
@@ -155,6 +165,7 @@ def main(args):
 	for idx, signal in enumerate(features):
 		plot_features(args.out_dir, signal, sampling_rate, "{}.png".format(idx + 1), apply_cmn=False)
 		plot_features(args.out_dir, signal, sampling_rate, "{}.cmn.png".format(idx + 1), apply_cmn=True)
+		plot_features(args.out_dir, signal, sampling_rate, "{}.norm.png".format(idx + 1), apply_cmn=True, global_normalization=True)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
