@@ -200,8 +200,8 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 
 			_mean = np.mean(feature, axis=2, keepdims=True) / num_signals
 			_std = np.std(feature, axis=2, keepdims=True) / num_signals
-			assert np.isnan(_mean) == False
-			assert np.isnan(_std) == False
+			assert np.isnan(np.sum(_mean)) == False
+			assert np.isnan(np.sum(_std)) == False
 			mean += _mean
 			std += _std
 
