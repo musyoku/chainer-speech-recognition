@@ -42,6 +42,7 @@ def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 	with codecs.open(trn_path, "r", "utf-8") as f:
 		for data in f:
 			period_str, channel, sentence = data.split(":")
+			sentence = sentence.strip()
 			period = period_str.split("-")
 			start_sec, end_sec = float(period[0]), float(period[1])
 			start_frame = int(start_sec * sampling_rate)
@@ -53,7 +54,9 @@ def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 			signal = audio[start_frame:end_frame]
 
 			assert len(signal) == end_frame - start_frame
-			assert len(signal) > config.num_fft
+			if len(signal) < config.num_fft * 3:
+				print("\r{}{} skipped. (length={})".format(stdout.CLEAR, sentence, len(signal)))
+				continue
 
 			# channelに従って選択
 			if signal.ndim == 2:
@@ -68,7 +71,6 @@ def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 
 			# 音素列をIDに変換
 			id_sequence = []
-			sentence = sentence.strip()
 			phoneme_sequence = convert_sentence_to_phoneme_sequence(sentence)
 			triphone_sequence = convert_phoneme_sequence_to_triphone_sequence(phoneme_sequence, convert_to_str=False)
 
