@@ -156,7 +156,8 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 
 			# ケプストラム平均正規化
 			if pre_normalization:
-				spec = np.exp(np.log(spec) - np.mean(np.log(spec), axis=0))
+				log_spec = np.log(spec + 1e-16)
+				spec = np.exp(log_spec - np.mean(log_spec, axis=0))
 
 			logmel = fft.compute_logmel(spec, config.sampling_rate, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, nfilt=config.num_mel_filters, winfunc=config.window_func)
 			logmel, delta, delta_delta = fft.compute_deltas(logmel)
