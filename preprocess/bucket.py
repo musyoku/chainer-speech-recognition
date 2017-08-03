@@ -198,8 +198,12 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			# from specgram import _plot_features
 			# _plot_features("/home/aibo/sandbox/plot", signal, config.sampling_rate, feature[:, 0].T, feature[:, 1].T, feature[:, 2].T, spec, str(np.random.randint(0, 5000)) + ".png")
 
-			mean += np.mean(feature, axis=2, keepdims=True) / num_signals
-			std += np.std(feature, axis=2, keepdims=True) / num_signals
+			_mean = np.mean(feature, axis=2, keepdims=True) / num_signals
+			_std = np.std(feature, axis=2, keepdims=True) / num_signals
+			assert np.isnan(_mean) == False
+			assert np.isnan(_std) == False
+			mean += _mean
+			std += _std
 
 		return mean, std
 
