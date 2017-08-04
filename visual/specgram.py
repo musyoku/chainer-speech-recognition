@@ -46,10 +46,11 @@ def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False, glo
 		from dataset import cache_path
 		mean = np.load(os.path.join(cache_path, "mean.npy")).astype(np.float32)[..., 0]
 		std = np.load(os.path.join(cache_path, "std.npy")).astype(np.float32)[..., 0]
-		print(mean)
+		assert np.isnan(np.sum(mean)) == False
+		assert np.isnan(np.sum(std)) == False
 		logmel = (logmel - mean[0]) / std[0]
-		delta = (delta - mean[0]) / std[0]
-		delta_delta = (delta_delta - mean[0]) / std[0]
+		delta = (delta - mean[1]) / std[1]
+		delta_delta = (delta_delta - mean[2]) / std[2]
 		
 
 	_plot_features(out_dir, signal, sampling_rate, logmel, delta, delta_delta, specgram, filename)
@@ -79,28 +80,28 @@ def _plot_features(out_dir, signal, sampling_rate, logmel, delta, delta_delta, s
 	pylab.title("Spectrogram")
 	pylab.xlabel("Time [sec]")
 	pylab.ylabel("Frequency [Hz]")
-	# pylab.colorbar()
+	pylab.colorbar()
 	
 	ax3 = pylab.subplot(513)
 	pylab.pcolormesh(np.arange(0, logmel.shape[0]), np.arange(1, 41), logmel.T, cmap=pylab.get_cmap("jet"))
 	pylab.title("Log mel filter bank features")
 	pylab.xlabel("Frame")
 	pylab.ylabel("Filter number")
-	# pylab.colorbar()
+	pylab.colorbar()
 	
 	ax4 = pylab.subplot(514)
 	pylab.pcolormesh(np.arange(0, delta.shape[0]), np.arange(1, 41), delta.T, cmap=pylab.get_cmap("jet"))
 	pylab.title("Deltas")
 	pylab.xlabel("Frame")
 	pylab.ylabel("Filter number")
-	# pylab.colorbar()
+	pylab.colorbar()
 	
 	ax5 = pylab.subplot(515)
 	pylab.pcolormesh(np.arange(0, delta_delta.shape[0]), np.arange(1, 41), delta_delta.T, cmap=pylab.get_cmap("jet"))
 	pylab.title("Delta-deltas")
 	pylab.xlabel("Frame")
 	pylab.ylabel("Filter number")
-	# pylab.colorbar()
+	pylab.colorbar()
 
 	pylab.tight_layout()
 	pylab.savefig(os.path.join(out_dir, filename), bbox_inches="tight")

@@ -9,7 +9,7 @@ sys.path.append("../")
 import config, fft
 from vocab import load_all_tokens, convert_sentence_to_phoneme_sequence, convert_phoneme_sequence_to_triphone_sequence, reduce_triphone, triphonize
 from util import stdout, print_bold
-from dataset import wav_path_list, transcription_path_list, cache_path
+from dataset import wav_path_list, transcription_path_list, cache_path, get_bucket_index, generate_signal_transcription_pairs
 
 def get_token_id(triphone):
 	L, X, R = triphone
@@ -32,54 +32,6 @@ def convert_triphone_to_id(triphone):
 	if token_id > 0:
 		return token_id
 	raise Exception(L, X, R)
-
-def get_bucket_idx(signal, sampling_rate=16000, split_sec=0.5):
-	divider = sampling_rate * split_sec
-	return int(len(signal) // divider)
-
-def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
-	batch = []
-	with codecs.open(trn_path, "r", "utf-8") as f:
-		for data in f:
-			period_str, channel, sentence = data.split(":")
-			sentence = sentence.strip()
-			period = period_str.split("-")
-			start_sec, end_sec = float(period[0]), float(period[1])
-			start_frame = int(start_sec * sampling_rate)
-			end_frame = int(end_sec * sampling_rate)
-
-			assert start_frame <= len(audio)
-			assert end_frame <= len(audio)
-
-			signal = audio[start_frame:end_frame]
-
-			assert len(signal) == end_frame - start_frame
-			if len(signal) < config.num_fft * 3:
-				print("\r{}{} skipped. (length={})".format(stdout.CLEAR, sentence, len(signal)))
-				continue
-
-			# channelに従って選択
-			if signal.ndim == 2:
-				if channel == "S":	# 両方に含まれる場合はL
-					signal = signal[:, 0]
-				elif channel == "L":
-					signal = signal[:, 0]
-				elif channel == "R":
-					signal = signal[:, 1]
-				else:
-					raise Exception()
-
-			# 音素列をIDに変換
-			id_sequence = []
-			phoneme_sequence = convert_sentence_to_phoneme_sequence(sentence)
-			triphone_sequence = convert_phoneme_sequence_to_triphone_sequence(phoneme_sequence, convert_to_str=False)
-
-			for triphone in triphone_sequence:
-				token_id = convert_triphone_to_id(triphone)
-				id_sequence.append(token_id)
-
-			batch.append((signal, id_sequence, sentence))
-	return batch
 
 def normalize_feature(array):
 	mean = np.mean(array)
@@ -112,7 +64,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		buckets[bucket_idx].append(data)
 
 	def add_to_bukcet(signal, sentence):
-		bucket_idx = get_bucket_idx(signal, config.sampling_rate, config.bucket_split_sec)
+		bucket_idx = get_bucket_index(signal, config.sampling_rate, config.bucket_split_sec)
 		# add signal
 		append_bucket(buckets_signal, bucket_idx, signal)
 		# add sentence

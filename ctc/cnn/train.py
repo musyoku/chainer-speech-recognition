@@ -11,10 +11,11 @@ from multiprocessing import Process, Queue
 sys.path.append("../../")
 import config
 from error import compute_minibatch_error
-from dataset import Dataset, cache_path, get_vocab, AugmentationOption, DevMinibatchIterator
+from dataset import Dataset, cache_path, AugmentationOption
 from model import load_model, save_model, build_model, save_params
 from util import stdout, print_bold
 from optim import get_current_learning_rate, decay_learning_rate, get_optimizer
+from vocab import load_all_tokens
 
 def formatted_error(error_values):
 	errors = []
@@ -30,12 +31,12 @@ def preloading_loop(dataset, augmentation, num_load, queue):
 
 def main():
 	# データの読み込み
-	vocab, vocab_inv, BLANK = get_vocab()
-	vocab_size = len(vocab)
+	TOKENS, _, BLANK = load_all_tokens("../../triphone.list")
+	vocab_size = len(TOKENS)
 
 	# ミニバッチを取れないものは除外
 	# GTX 1080 1台基準
-	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
+	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	cache_size = 0 if args.multiprocessing else 200	# マルチプロセスの場合キャッシュごとコピーされるのでメモリを圧迫する
 	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, id_blank=BLANK, num_buckets_to_store_memory=cache_size)
@@ -46,8 +47,6 @@ def main():
 		augmentation.change_vocal_tract = True
 		augmentation.change_speech_rate = True
 		augmentation.add_noise = True
-
-	total_iterations_train = dataset.get_total_training_iterations()
 
 	# モデル
 	chainer.global_config.vocab_size = vocab_size
@@ -71,7 +70,7 @@ def main():
 		 num_mel_filters=config.num_mel_filters, architecture=config.architecture)
 
 	if args.gpu_device >= 0:
-		chainer.cuda.get_device(args.gpu_device).use()
+		cuda.get_device(args.gpu_device).use()
 		model.to_gpu(args.gpu_device)
 	xp = model.xp
 
@@ -82,12 +81,15 @@ def main():
 	optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
 	final_learning_rate = 1e-4
 	total_time = 0
-
+	
+	# マルチプロセスでデータを準備する場合
 	if args.multiprocessing:
 		num_preloads = 30
 		queue = preloading_loop(dataset, augmentation, num_preloads, Queue())
 		preloading_process = None
 
+	# 学習ループ
+	total_iterations_train = dataset.get_total_training_iterations()
 	for epoch in xrange(1, args.total_epoch + 1):
 		print_bold("Epoch %d" % epoch)
 		start_time = time.time()
@@ -100,9 +102,9 @@ def main():
 			while total_iterations_train > current_iteration:
 
 				if args.multiprocessing:
-					minibatches = []
+					minibatch_list = []
 					for _ in range(num_preloads):
-						minibatches.append(queue.get())
+						minibatch_list.append(queue.get())
 
 					if preloading_process is not None:
 						preloading_process.join()
@@ -111,13 +113,13 @@ def main():
 					preloading_process = Process(target=preloading_loop, args=(dataset, augmentation, num_preloads, queue))
 					preloading_process.start()
 				else:
-					minibatches = [dataset.get_minibatch(option=augmentation, gpu=False)]
+					minibatch_list = [dataset.get_minibatch(option=augmentation, gpu=False)]
 
-				for batch_idx, data in enumerate(minibatches):
+				for batch_idx, data in enumerate(minibatch_list):
 					try:
 						x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx = data
 
-						if True:
+						if args.gpu_device >= 0:
 							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
 							t_batch = cuda.to_gpu(t_batch.astype(np.int32))
 							x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
@@ -143,7 +145,7 @@ def main():
 					sys.stdout.write("\riteration {}/{}".format(batch_idx + current_iteration + 1, total_iterations_train))
 					sys.stdout.flush()
 
-				current_iteration += len(minibatches)
+				current_iteration += len(minibatch_list)
 
 		sys.stdout.write("\r" + stdout.CLEAR)
 		sys.stdout.flush()
@@ -152,7 +154,7 @@ def main():
 		# バリデーション
 		with chainer.using_config("train", False):
 			# ノイズ無しデータでバリデーション
-			iterator = DevMinibatchIterator(dataset, batchsizes, AugmentationOption(), gpu=args.gpu_device >= 0)
+			iterator = dataset.get_iterator_dev(batchsizes, None, gpu=args.gpu_device >= 0)
 			buckets_errors = []
 			for batch in iterator:
 				try:
