@@ -125,6 +125,57 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 		)
 		return model
 
+	if architecture == "zhang+fc_relu":
+		# first layer
+		model.layer(
+			nn.Convolution2D(ndim_audio_features, ndim_h * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+			lambda x: x[..., :-pad],
+			nn.Maxout(2),
+			nn.Dropout(dropout),
+			nn.MaxPooling2D(ksize=(3, 1)),
+		)
+		# conv layers
+		num_conv_layers_narrow = min(num_conv_layers, 4)
+		num_conv_layers_wide = max(0, num_conv_layers - 4)
+		in_out = [(ndim_h, ndim_h * 2)] * num_conv_layers_narrow
+		if num_conv_layers_wide > 0:
+			in_out[-1] = (ndim_h, ndim_h * 4)
+
+		for in_channels, out_channels in in_out:
+			model.layer(
+				nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+				lambda x: x[..., :-pad],
+				nn.Maxout(2),
+				nn.Dropout(dropout),
+			)
+
+		if num_conv_layers_wide > 0:
+			in_out = [(ndim_h * 2, ndim_h * 4)] * num_conv_layers_narrow
+			for in_channels, out_channels in in_out:
+				model.layer(
+					nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+					lambda x: x[..., :-pad],
+					nn.Maxout(2),
+					nn.Dropout(dropout),
+				)
+
+		# dense layers
+		model.layer(
+			nn.Convolution2D(in_out[-1][0], ndim_dense, ksize=(kernel_height, 1), stride=1, pad=0, weightnorm=weightnorm),
+			nn.ReLU(),
+			nn.Dropout(dropout),
+		)
+		model.layer(
+			nn.Convolution2D(ndim_dense, ndim_dense, ksize=1, stride=1, pad=0, weightnorm=weightnorm),
+			nn.ReLU(),
+			nn.Dropout(dropout),
+		)
+		model.layer(
+			nn.Convolution2D(ndim_dense, vocab_size, ksize=1, stride=1, pad=0, weightnorm=weightnorm),
+			nn.LayerNormalization(None),
+		)
+		return model
+
 	if architecture == "zhang+residual":
 		# first layer
 		model.layer(
