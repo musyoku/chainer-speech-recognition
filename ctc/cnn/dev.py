@@ -10,18 +10,17 @@ from chainer import optimizers, cuda, serializers
 sys.path.append("../../")
 import config
 from error import compute_minibatch_error
-from dataset import Dataset, cache_path, get_vocab, AugmentationOption, DevMinibatchIterator
+from dataset import Dataset, cache_path, AugmentationOption
 from model import load_model
 from util import stdout, print_bold
+from vocab import load_all_tokens
 
 def main():
-	# データの読み込み
-	vocab, vocab_inv, BLANK = get_vocab()
-	vocab_size = len(vocab)
+	_, TOKENS_INV, BLANK = load_all_tokens("../../triphone.list")
 
 	# ミニバッチを取れないものは除外
 	# GTX 1080 1台基準
-	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8]
+	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, id_blank=BLANK)
 	dataset.dump_information()
@@ -42,7 +41,7 @@ def main():
 
 	# バリデーション
 	with chainer.using_config("train", False):
-		iterator = DevMinibatchIterator(dataset, batchsizes, augmentation, gpu=args.gpu_device >= 0)
+		iterator = dataset.get_iterator_dev(batchsizes, None, gpu=args.gpu_device >= 0)
 		buckets_errors = []
 		for batch in iterator:
 			try:
@@ -54,7 +53,7 @@ def main():
 
 				y_batch = model(x_batch, split_into_variables=False)
 				y_batch = xp.argmax(y_batch.data, axis=2)
-				error = compute_minibatch_error(y_batch, t_batch, BLANK, print_sequences=True, vocab=vocab_inv)
+				error = compute_minibatch_error(y_batch, t_batch, BLANK, print_sequences=True, vocab=TOKENS_INV)
 
 				while bucket_idx >= len(buckets_errors):
 					buckets_errors.append([])

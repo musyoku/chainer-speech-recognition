@@ -81,7 +81,7 @@ def main():
 	optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
 	final_learning_rate = 1e-4
 	total_time = 0
-	
+
 	# マルチプロセスでデータを準備する場合
 	if args.multiprocessing:
 		num_preloads = 30
