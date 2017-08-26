@@ -21,7 +21,6 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 	assert len(transcription_paths) > 0
 
 	config = chainer.config
-	dataset = []
 	buckets_signal = []
 	buckets_sentence = []
 	buckets_file_indices = []
@@ -183,11 +182,11 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			# 転記の読み込みと音声の切り出し
 			signal_transcription_pairs = generate_signal_transcription_pairs(os.path.join(trn_dir, trn_filename), audio, sampling_rate)
 
-			for idx, (signal_sequence, sentence) in enumerate(signal_transcription_pairs):
+			for idx, (signal_sequence, unigram_ids, sentence) in enumerate(signal_transcription_pairs):
 				# データを確認する場合は書き出し
 				# wavfile.write("/home/stark/sandbox/debug/{}.wav".format(sentence), config.sampling_rate, signal_sequence)
 				
-				write_to_file, bucket_idx = add_to_bukcet(signal_sequence, sentence)
+				write_to_file, bucket_idx = add_to_bukcet(signal_sequence, unigram_ids)
 				if write_to_file:
 					printr("Computing mean and std of bucket {} ...".format(bucket_idx))
 

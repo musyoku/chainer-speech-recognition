@@ -2,9 +2,12 @@
 from __future__ import print_function
 import jaconv, os, sys, argparse, codecs
 sys.path.append("../")
-from vocab import get_all_bigram_tokens, convert_sentence_to_unigram_tokens
+from vocab import get_all_bigram_tokens, convert_sentence_to_unigram_tokens, UNIGRAM_TOKENS
 
 def main():
+	unigram_counts = {}
+	for token in UNIGRAM_TOKENS:
+		unigram_counts[token] = 0
 	bigram_counts = {}
 	bigram_tokens = get_all_bigram_tokens()
 	for (first, second) in bigram_tokens:
@@ -24,6 +27,10 @@ def main():
 					assert len(components) == 3
 					sentence = components[-1].strip()
 					unigram_tokens = convert_sentence_to_unigram_tokens(sentence)
+					for token in unigram_tokens:
+						if token not in unigram_counts:
+							raise Exception(token)
+						unigram_counts[token] += 1
 					if len(unigram_tokens) == 1:
 						continue
 					for first, second in zip(unigram_tokens[:-1], unigram_tokens[1:]):
@@ -48,6 +55,11 @@ def main():
 		f.write("\n".join(accepted_bigram))
 
 	print("total:", len(accepted_bigram))
+
+
+	for token, count in sorted(unigram_counts.items(), key=lambda x:x[1]):
+		if count < 1000:
+			print(token, count)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()

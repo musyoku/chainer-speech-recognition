@@ -11,6 +11,7 @@ import acoustics
 import fft
 from chainer import cuda
 from util import stdout, printb
+from vocab import convert_sentence_to_unigram_ids
 
 wav_path_list = [
 	"/home/stark/sandbox/CSJ/WAV/core",
@@ -155,7 +156,9 @@ def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 				else:
 					raise Exception()
 
-			batch.append((signal, sentence))
+			unigram_ids = convert_sentence_to_unigram_ids(sentence)
+
+			batch.append((signal, unigram_ids, sentence))
 	return batch
 
 def extract_features_by_indices(indices, signal_list, sentence_list, option=None, fbank=None):

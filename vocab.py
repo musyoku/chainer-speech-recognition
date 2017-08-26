@@ -11,37 +11,57 @@ UNIGRAM_TOKENS = [
 	"サ", "シ", "ス", "セ", "ソ", 
 	"ザ", "ジ", "ズ", "ゼ", "ゾ", 
 	"タ", "チ", "ツ", "テ", "ト", 
-	"ダ", "ヂ", "ヅ", "デ", "ド", 
+	"ダ", "デ", "ド", 
 	"ナ", "ニ", "ヌ", "ネ", "ノ", 
 	"ハ", "ヒ", "フ", "ヘ", "ホ", 
 	"バ", "ビ", "ブ", "ベ", "ボ", 
 	"パ", "ピ", "プ", "ペ", "ポ", 
 	"マ", "ミ", "ム", "メ", "モ", 
 	"ラ", "リ", "ル", "レ", "ロ", 
-	"ワ", "ヲ", "ヤ", "ユ", "ヨ", 
+	"ワ", "ヤ", "ユ", "ヨ", 
 	"キャ", "キュ", "キョ", "ギャ", 
 	"ギュ", "ギョ", "シャ", "シュ", 
 	"ショ", "ジャ", "ジュ", "ジョ", 
-	"チャ", "チュ", "チョ", "ニャ", 
-	"ニュ", "ニョ", "ヒャ", "ヒュ", 
-	"ヒョ", "ビャ", "ビュ", "ビョ", 
-	"ピャ", "ピュ", "ピョ", "ミャ", 
-	"ミュ", "ミョ", "リャ", "リュ", 
-	"リョ", "イェ", "シェ", "ジェ", 
-	"ティ", "トゥ", "チェ", "ツァ", 
-	"ツィ", "ツェ", "ツォ", "ディ", 
-	"ドゥ", "デュ", "ニェ", "ヒェ", 
+	"チャ", "チュ", "チョ", 
+	"ニャ", "ニュ", "ニョ", 
+	"ヒャ", "ヒュ", 	"ヒョ", 
+	"ビャ", "ビュ", "ビョ", 
+	"ピャ", "ピュ", "ピョ", 
+	"ミャ", 	"ミュ", "ミョ", 
+	"リャ", "リュ", 	"リョ", 
+	"シェ", "ジェ", 
+	"ティ", "トゥ", "チェ", 
+	"ディ", 	"ドゥ", "デュ",
 	"ファ", "フィ", "フェ", "フォ", 
-	"フュ", "ブィ", "ミェ", "ウィ", 
-	"ウェ", "ウォ", "クヮ", "グヮ", 
-	"スィ", "ズィ", "テュ", "ヴァ", 
-	"ヴィ", "ヴ", "ヴェ", "ヴォ", 
-	"ン", "ッ"
+	"ウィ", "ウェ", "ウォ", 
+	"ン", "ッ", "ー",
 ]
 
 SUTEGANA = [
 	"ァ","ィ","ゥ","ェ","ォ","ャ","ュ","ョ","ヮ",
 ]
+
+UNIGRAM_COLLAPSE = {
+	"ヒェ": "ヒエ",
+	"ミェ": "ミエ",
+	"ヴァ": "バ",
+	"ヴィ": "ビ",
+	"ヴ": "ブ",
+	"ヴェ": "ベ",
+	"ヴォ": "ボ",
+	"クヮ": "クワ",
+	"グヮ": "グワ",
+	"フュ": "ヒュ",
+	"ニェ": "ニエ",
+	"ツィ": "ツイ",
+	"イェ": "イエ",
+	"ズィ": "ズイ",
+	"ツェ": "ツエ",
+	"ツァ": "ツア",
+	"ツォ": "ツオ",
+	"スィ": "シ",
+	"テュ": "テユ",
+}
 
 ID_BLANK = 0
 
@@ -58,6 +78,8 @@ def get_unigram_ids():
 		ids_inv[token_id] = token
 
 	return ids, ids_inv, ID_BLANK
+
+UNIGRAM_TOKEN_IDS, UNIGRAM_ID_TOKENS, _ = get_unigram_ids()
 
 def load_all_bigram_ids(filename):
 	assert os.path.isfile(filename)
@@ -83,12 +105,31 @@ def get_all_bigram_tokens():
 			tokens.append((first, second))
 	return tokens
 
+def convert_sentence_to_unigram_ids(sentence):
+	tokens = convert_sentence_to_unigram_tokens(sentence)
+	ids = []
+	for token in tokens:
+		assert token in UNIGRAM_TOKEN_IDS
+		ids.append(UNIGRAM_TOKEN_IDS[token])
+	return ids
+
 def convert_sentence_to_unigram_tokens(sentence):
-	tokens = []
+	_tokens = []
 	for char in sentence:
 		if char in SUTEGANA:
-			assert len(tokens) > 0
-			tokens[-1] += char
+			assert len(_tokens) > 0
+			_tokens[-1] += char
 			continue
-		tokens.append(char)
+		_tokens.append(char)
+	for i, token in enumerate(_tokens):
+		if token in UNIGRAM_COLLAPSE:
+			_tokens[i] = UNIGRAM_COLLAPSE[token]
+	tokens = []
+	for token in _tokens:
+		for char in token:
+			if char in SUTEGANA:
+				assert len(tokens) > 0
+				tokens[-1] += char
+				continue
+			tokens.append(char)
 	return tokens
