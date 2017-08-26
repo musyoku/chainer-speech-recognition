@@ -7,31 +7,8 @@ import scipy.io.wavfile as wavfile
 from chainer import cuda
 sys.path.append("../")
 import config, fft
-from vocab import load_all_tokens, convert_sentence_to_phoneme_sequence, convert_phoneme_sequence_to_triphone_sequence, reduce_triphone, triphonize
-from util import stdout, print_bold
+from util import stdout, printb, printr
 from dataset import wav_path_list, transcription_path_list, cache_path, get_bucket_index, generate_signal_transcription_pairs
-
-def get_token_id(triphone):
-	L, X, R = triphone
-	token = triphonize(L, X, R)
-	if token in DICTIONARY_TOKEN_ID:
-		return DICTIONARY_TOKEN_ID[token]
-	return -1
-
-def convert_triphone_to_id(triphone):
-	L, X, R = triphone
-	L, X, R = reduce_triphone(L, X, R)
-	token_id = get_token_id((L, X, R))
-	if token_id > 0:
-		return token_id
-	if L and R:
-		token_id = get_token_id((None, X, R))
-		if token_id > 0:
-			return token_id
-	token_id = get_token_id((None, X, None))
-	if token_id > 0:
-		return token_id
-	raise Exception(L, X, R)
 
 def normalize_feature(array):
 	mean = np.mean(array)
@@ -195,42 +172,31 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			except KeyboardInterrupt:
 				exit()
 			except Exception as e:
-				sys.stdout.write("\r")
-				sys.stdout.write(stdout.CLEAR)
-				print("Failed to read {} ({})".format(wav_filename, str(e)))
+				printr("Failed to read {} ({})".format(wav_filename, str(e)))
 				continue
 
 			duration = audio.size / sampling_rate / 60
 			total_min += duration
 
-			sys.stdout.write("\r")
-			sys.stdout.write(stdout.CLEAR)
-			sys.stdout.write("Loading {} ({}/{}) ... shape={}, rate={}, min={}, #buckets={}, #data={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(duration), len(buckets_signal), current_num_data))
-			sys.stdout.flush()
+			printr("Loading {} ({}/{}) ... shape={}, rate={}, min={}, #buckets={}, #data={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(duration), len(buckets_signal), current_num_data))
 
 			# 転記の読み込みと音声の切り出し
 			signal_transcription_pairs = generate_signal_transcription_pairs(os.path.join(trn_dir, trn_filename), audio, sampling_rate)
 
-			for idx, (signal_sequence, id_sequence, sentence) in enumerate(signal_transcription_pairs):
+			for idx, (signal_sequence, sentence) in enumerate(signal_transcription_pairs):
 				# データを確認する場合は書き出し
 				# wavfile.write("/home/stark/sandbox/debug/{}.wav".format(sentence), config.sampling_rate, signal_sequence)
 				
-				write_to_file, bucket_idx = add_to_bukcet(signal_sequence, id_sequence)
+				write_to_file, bucket_idx = add_to_bukcet(signal_sequence, sentence)
 				if write_to_file:
-					sys.stdout.write("\r")
-					sys.stdout.write(stdout.CLEAR)
-					sys.stdout.write("Computing mean and std of bucket {} ...".format(bucket_idx))
-					sys.stdout.flush()
+					printr("Computing mean and std of bucket {} ...".format(bucket_idx))
 
 					mean, std = compute_mean_and_std(bucket_idx)
 					feature_mean += mean
 					feature_std += std
 					statistics_denominator += 1
 
-					sys.stdout.write("\r")
-					sys.stdout.write(stdout.CLEAR)
-					sys.stdout.write("Writing bucket {} ...".format(bucket_idx))
-					sys.stdout.flush()
+					printr("Writing bucket {} ...".format(bucket_idx))
 
 					save_bucket(bucket_idx)
 					current_num_data += num_signals_per_file
@@ -239,8 +205,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 						data_limit_exceeded = True
 						break
 
-	sys.stdout.write("\r")
-	sys.stdout.write(stdout.CLEAR)
+	printr("")
 	if data_limit_exceeded == False:
 		for bucket_idx, bucket in enumerate(buckets_signal):
 			if len(bucket) > 0:
@@ -269,10 +234,6 @@ if __name__ == "__main__":
 	mkdir(cache_path)
 	mkdir(os.path.join(cache_path, "signal"))
 	mkdir(os.path.join(cache_path, "sentence"))
-
-	triphone_list_path = "../triphone.list"
-	assert os.path.isfile(triphone_list_path)
-	DICTIONARY_TOKEN_ID, DICTIONARY_ID_TOKEN, BLANK = load_all_tokens(triphone_list_path)
 
 	# すべての.wavを読み込み、一定の長さごとに保存
 	generate_buckets(wav_path_list, transcription_path_list, cache_path, buckets_limit=20, data_limit=None, num_signals_per_file=1000)

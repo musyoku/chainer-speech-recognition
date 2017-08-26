@@ -13,9 +13,9 @@ import config
 from error import compute_minibatch_error
 from dataset import Dataset, cache_path, AugmentationOption
 from model import load_model, save_model, build_model, save_params
-from util import stdout, print_bold
+from util import stdout, printb
 from optim import get_current_learning_rate, decay_learning_rate, get_optimizer
-from vocab import load_all_tokens
+from vocab import get_unigram_ids
 
 def formatted_error(error_values):
 	errors = []
@@ -31,10 +31,10 @@ def preloading_loop(dataset, augmentation, num_load, queue):
 
 def main():
 	# データの読み込み
-	TOKENS, _, BLANK = load_all_tokens("../../triphone.list")
-	vocab_size = len(TOKENS)
+	UNIGRAM_IDS, _, BLANK = get_unigram_ids()
+	vocab_size = len(UNIGRAM_IDS)
 
-	# ミニバッチを取れないものは除外
+	# バケツごとのミニバッチサイズ
 	# GTX 1080 1台基準
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 
@@ -77,8 +77,10 @@ def main():
 	# optimizer
 	optimizer = get_optimizer(args.optimizer, args.learning_rate, args.momentum)
 	optimizer.setup(model)
-	optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
-	optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
+	if args.grad_clip > 0:
+		optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
+	if args.weight_decay > 0:
+		optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
 	final_learning_rate = 1e-4
 	total_time = 0
 
@@ -91,7 +93,7 @@ def main():
 	# 学習ループ
 	total_iterations_train = dataset.get_total_training_iterations()
 	for epoch in xrange(1, args.total_epoch + 1):
-		print_bold("Epoch %d" % epoch)
+		printb("Epoch %d" % epoch)
 		start_time = time.time()
 		loss_value = 0
 		sum_loss = 0
@@ -141,9 +143,7 @@ def main():
 						print(" ", bucket_idx, str(e))
 
 					sum_loss += loss_value
-					sys.stdout.write("\r" + stdout.CLEAR)
-					sys.stdout.write("\riteration {}/{}".format(batch_idx + current_iteration + 1, total_iterations_train))
-					sys.stdout.flush()
+					printr("iteration {}/{}".format(batch_idx + current_iteration + 1, total_iterations_train))
 
 				current_iteration += len(minibatch_list)
 
@@ -160,9 +160,7 @@ def main():
 				try:
 					x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx = batch
 
-					sys.stdout.write("\r" + stdout.CLEAR)
-					sys.stdout.write("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
-					sys.stdout.flush()
+					printr("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
 
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)

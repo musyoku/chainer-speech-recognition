@@ -2,7 +2,7 @@
 from __future__ import print_function
 import jaconv, os, sys, argparse, codecs
 sys.path.append("../")
-from vocab import get_all_bigram_tokens, convert_sentence_to_bigram_tokens
+from vocab import get_all_bigram_tokens, convert_sentence_to_unigram_tokens
 
 def main():
 	bigram_counts = {}
@@ -23,7 +23,7 @@ def main():
 					components = data.split(":")
 					assert len(components) == 3
 					sentence = components[-1].strip()
-					unigram_tokens = convert_sentence_to_bigram_tokens(sentence)
+					unigram_tokens = convert_sentence_to_unigram_tokens(sentence)
 					if len(unigram_tokens) == 1:
 						continue
 					for first, second in zip(unigram_tokens[:-1], unigram_tokens[1:]):

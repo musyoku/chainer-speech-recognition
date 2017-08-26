@@ -10,7 +10,7 @@ import config
 import acoustics
 import fft
 from chainer import cuda
-from util import stdout, print_bold
+from util import stdout, printb
 
 wav_path_list = [
 	"/home/stark/sandbox/CSJ/WAV/core",
@@ -111,7 +111,7 @@ def load_test_buckets(wav_dir, trn_dir, buckets_limit=None):
 
 	sys.stdout.write("\r")
 	sys.stdout.write(stdout.CLEAR)
-	print_bold("bucket	#data	sec")
+	printb("bucket	#data	sec")
 	total = 0
 	for bucket_idx, signals in enumerate(buckets_signal):
 		if buckets_limit and bucket_idx >= buckets_limit:
@@ -155,16 +155,7 @@ def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 				else:
 					raise Exception()
 
-			# 音素列をIDに変換
-			id_sequence = []
-			phoneme_sequence = convert_sentence_to_phoneme_sequence(sentence)
-			triphone_sequence = convert_phoneme_sequence_to_triphone_sequence(phoneme_sequence, convert_to_str=False)
-
-			for triphone in triphone_sequence:
-				token_id = convert_triphone_to_id(triphone)
-				id_sequence.append(token_id)
-
-			batch.append((signal, id_sequence, sentence))
+			batch.append((signal, sentence))
 	return batch
 
 def extract_features_by_indices(indices, signal_list, sentence_list, option=None, fbank=None):
@@ -370,6 +361,8 @@ class DevelopmentMinibatchIterator(object):
 		batchsize = self.batchsizes[bucket_idx]
 		batchsize = len(indices_dev) - self.pos if batchsize > len(indices_dev) - self.pos else batchsize
 		indices = indices_dev[self.pos:self.pos + batchsize]
+		if len(indices) == 0:
+			import pdb; pdb.set_trace()
 		assert len(indices) > 0
 
 		extracted_features, sentences, max_feature_length, max_sentence_length = self.dataset.extract_features_by_indices(indices, signal_list, sentence_list, option=self.option)
@@ -491,7 +484,8 @@ class Dataset(object):
 				np.random.shuffle(indices)
 				num_dev = int(num_data * dev_split)
 				indices_train.append(indices[num_dev:])
-				indices_dev.append(indices[:num_dev])
+				if num_dev > 0:
+					indices_dev.append(indices[:num_dev])
 			buckets_indices_train.append(indices_train)
 			buckets_indices_dev.append(indices_dev)
 
@@ -585,13 +579,13 @@ class Dataset(object):
 
 	def dump_num_updates(self):
 		for bucket_idx in range(len(self.buckets_signal)):
-			print_bold("bucket " + str(bucket_idx))
+			printb("bucket " + str(bucket_idx))
 			buckets = self.buckets_num_updates[bucket_idx]
 			print(buckets)
 			print(sum(buckets) / len(buckets))
 
 	def dump_information(self):
-		print_bold("bucket	#train	#dev	sec")
+		printb("bucket	#train	#dev	sec")
 		total_train = 0
 		total_dev = 0
 		config = chainer.config

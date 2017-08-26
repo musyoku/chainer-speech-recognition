@@ -1,3 +1,4 @@
+import sys
 
 class stdout:
 	BOLD = "\033[1m"
@@ -6,5 +7,10 @@ class stdout:
 	MOVE = "\033[1A"
 	LEFT = "\033[G"
 
-def print_bold(str):
-	print(stdout.BOLD + str + stdout.END)
+def printb(string):
+	print(stdout.BOLD + string + stdout.END)
+
+def printr(string):
+	sys.stdout.write("\r" + stdout.CLEAR)
+	sys.stdout.write(string)
+	sys.stdout.flush()
