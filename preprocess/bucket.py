@@ -186,7 +186,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 				# データを確認する場合は書き出し
 				# wavfile.write("/home/stark/sandbox/debug/{}.wav".format(sentence), config.sampling_rate, signal_sequence)
 				
-				write_to_file, bucket_idx = add_to_bukcet(signal_sequence, unigram_ids)
+				write_to_file, bucket_idx = add_to_bukcet(signal_sequence, sentence)
 				if write_to_file:
 					printr("Computing mean and std of bucket {} ...".format(bucket_idx))
 
@@ -235,4 +235,4 @@ if __name__ == "__main__":
 	mkdir(os.path.join(cache_path, "sentence"))
 
 	# すべての.wavを読み込み、一定の長さごとに保存
-	generate_buckets(wav_path_list, transcription_path_list, cache_path, buckets_limit=20, data_limit=None, num_signals_per_file=1000)
+	generate_buckets(wav_path_list, transcription_path_list, cache_path, buckets_limit=20, data_limit=None, num_signals_per_file=500)
