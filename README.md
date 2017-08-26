@@ -1,6 +1,6 @@
 # [WIP] Character Level Speech Recognition
 
-in progress ...
+# Work in progress ...
 
 ## 注意
 
