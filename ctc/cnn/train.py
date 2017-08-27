@@ -93,8 +93,6 @@ def main():
 
 	# 学習ループ
 	total_iterations_train = dataset.get_total_training_iterations()
-	total_iterations_train = 2
-
 	for epoch in xrange(1, args.total_epoch + 1):
 		printb("Epoch %d" % epoch)
 		start_time = time.time()
