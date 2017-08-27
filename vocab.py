@@ -2,8 +2,6 @@
 from __future__ import print_function
 import jaconv, os
 
-BLANK = 0
-
 UNIGRAM_TOKENS = [
 	"ア", "イ", "ウ", "エ", "オ", 
 	"カ", "キ", "ク", "ケ", "コ", 
@@ -77,26 +75,21 @@ def get_unigram_ids():
 	for token, token_id in ids.items():
 		ids_inv[token_id] = token
 
-	return ids, ids_inv, ID_BLANK
+	return ids, ids_inv
 
-UNIGRAM_TOKEN_IDS, UNIGRAM_ID_TOKENS, _ = get_unigram_ids()
-
-def load_all_bigram_ids(filename):
+def load_unigram_and_bigram_ids(filename):
 	assert os.path.isfile(filename)
-	ids = {
-		"_": ID_BLANK	# blank
-	}
-
+	unigram_token_ids, _ = get_unigram_ids()
 	with open(filename, "r") as f:
 		for token in f:
 			token = token.strip()
-			ids[token] = len(ids)
+			unigram_token_ids[token] = len(unigram_token_ids)
 
 	ids_inv = {}
-	for token, token_id in ids.items():
+	for token, token_id in unigram_token_ids.items():
 		ids_inv[token_id] = token
 
-	return ids, ids_inv, ID_BLANK
+	return unigram_token_ids, ids_inv
 
 def get_all_bigram_tokens():
 	tokens = []
@@ -105,12 +98,12 @@ def get_all_bigram_tokens():
 			tokens.append((first, second))
 	return tokens
 
-def convert_sentence_to_unigram_ids(sentence):
+def convert_sentence_to_unigram_ids(sentence, unigram_token_ids):
 	tokens = convert_sentence_to_unigram_tokens(sentence)
 	ids = []
 	for token in tokens:
-		assert token in UNIGRAM_TOKEN_IDS
-		ids.append(UNIGRAM_TOKEN_IDS[token])
+		assert token in unigram_token_ids
+		ids.append(unigram_token_ids[token])
 	return ids
 
 def convert_sentence_to_unigram_tokens(sentence):

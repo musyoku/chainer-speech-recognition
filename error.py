@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-from util import print_bold, stdout
+from util import printb, printr, stdout
 
 def compute_character_error_rate(r, h):
 	if len(r) == 0:
@@ -25,8 +25,7 @@ def compute_minibatch_error(y_batch, t_batch, BLANK, print_sequences=False, voca
 	sum_error = 0
 
 	if print_sequences and vocab is not None:
-		sys.stdout.write("\r" + stdout.CLEAR)
-		sys.stdout.flush()
+		printr("")
 
 	for batch_idx, (argmax_sequence, true_sequence) in enumerate(zip(y_batch, t_batch)):
 		target_sequence = []
@@ -52,7 +51,7 @@ def compute_minibatch_error(y_batch, t_batch, BLANK, print_sequences=False, voca
 			pred_str = ""
 			for char_id in pred_seqence:
 				pred_str += vocab[char_id]
-			print_bold("pred:	" + pred_str)
+			printb("pred:	" + pred_str)
 			target_str = ""
 			for char_id in target_sequence:
 				target_str += vocab[char_id]
@@ -111,10 +110,7 @@ def compute_error(model, buckets_indices, buckets_feature, buckets_feature_lengt
 				error = compute_character_error_rate(target_sequence, pred_seqence)
 				sum_error += error
 
-
-			sys.stdout.write("\r" + stdout.CLEAR)
-			sys.stdout.write("\rComputing error - bucket {}/{} - iteration {}/{}".format(bucket_idx + 1, len(buckets_indices), itr, total_iterations))
-			sys.stdout.flush()
+			printr("Computing error - bucket {}/{} - iteration {}/{}".format(bucket_idx + 1, len(buckets_indices), itr, total_iterations))
 			data_indices = np.roll(data_indices, batchsize)
 
 		errors.append(sum_error * 100.0 / batchsize / total_iterations)

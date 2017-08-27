@@ -11,7 +11,7 @@ def main():
 	bigram_counts = {}
 	bigram_tokens = get_all_bigram_tokens()
 	for (first, second) in bigram_tokens:
-		bigram_counts[first + "+" + second] = 0
+		bigram_counts[first + second] = 0
 	trn_base_dir = "/home/stark/sandbox/CSJ_/"
 	trn_dir_list = [os.path.join(trn_base_dir, category) for category in ["core", "noncore"]]
 	all_triphone_sequences = []
@@ -38,7 +38,7 @@ def main():
 							continue
 						if second == u"ー":
 							continue
-						key = first + "+" + second
+						key = first + second
 						if key not in bigram_counts:
 							raise Exception(key)
 						bigram_counts[key] += 1

@@ -11,7 +11,7 @@ import acoustics
 import fft
 from chainer import cuda
 from util import stdout, printb
-from vocab import convert_sentence_to_unigram_ids
+from vocab import convert_sentence_to_unigram_tokens
 
 wav_path_list = [
 	"/home/stark/sandbox/CSJ/WAV/core",
@@ -156,9 +156,7 @@ def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 				else:
 					raise Exception()
 
-			unigram_ids = convert_sentence_to_unigram_ids(sentence)
-
-			batch.append((signal, unigram_ids, sentence))
+			batch.append((signal, sentence))
 	return batch
 
 def extract_features_by_indices(indices, signal_list, sentence_list, option=None, fbank=None):
@@ -205,7 +203,9 @@ def extract_features_by_indices(indices, signal_list, sentence_list, option=None
 	assert max_feature_length > 0
 	return extracted_features, sentences, max_feature_length, max_sentence_length
 
-def features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, id_blank, x_mean, x_std, gpu=True):
+def features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, token_ids, id_blank, x_mean, x_std, gpu=True):
+	assert isinstance(token_ids, dict)
+	assert isinstance(id_blank, int)
 	config = chainer.config
 	batchsize = len(features)
 	channels = 1
@@ -217,12 +217,31 @@ def features_to_minibatch(features, sentences, max_feature_length, max_sentence_
 
 	x_batch = np.zeros((batchsize, channels, height, max_feature_length), dtype=np.float32)
 	t_batch = np.full((batchsize, max_sentence_length), id_blank, dtype=np.int32)
+	bigram_batch = np.full((batchsize, max_sentence_length), id_blank, dtype=np.int32)
 	x_length_batch = []
 	t_length_batch = []
 
 	for batch_idx, ((logmel, delta, delta_delta), sentence) in enumerate(zip(features, sentences)):
+		# 書き起こしをunigram単位に分割
+		unigram_tokens = convert_sentence_to_unigram_tokens(sentence)
+		bigram_tokens = []
+		if len(unigram_tokens) > 1:
+			for first, second in zip(unigram_tokens[:-1], unigram_tokens[1:]):
+				bigram_tokens.append(first + second)
+
+		unigram_ids = []
+		bigram_ids = [-1]
+		for token in unigram_tokens:
+			unigram_ids.append(token_ids[token])
+		for token in bigram_tokens:
+			if token in token_ids:
+				bigram_ids.append(token_ids[token])
+			else:
+				bigram_ids.append(-1)
+		assert len(unigram_ids) == len(bigram_ids)
+
 		x_length = logmel.shape[1]
-		t_length = len(sentence)
+		t_length = len(unigram_ids)
 
 		x_batch[batch_idx, 0, :, :x_length] = logmel
 		if config.using_delta:
@@ -232,15 +251,17 @@ def features_to_minibatch(features, sentences, max_feature_length, max_sentence_
 		x_length_batch.append(x_length)
 
 		# CTCが適用可能かチェック
-		num_trans_same_label = np.count_nonzero(sentence == np.roll(sentence, 1))
+		num_trans_same_label = np.count_nonzero(unigram_ids == np.roll(unigram_ids, 1))
 		required_length = t_length * 2 + 1 + num_trans_same_label
 		if x_length < required_length:
 			possibole_t_length = (x_length - num_trans_same_label - 1) // 2
-			sentence = sentence[:possibole_t_length]
-			t_length = len(sentence)
+			unigram_ids = unigram_ids[:possibole_t_length]
+			bigram_ids = bigram_ids[:possibole_t_length]
+			t_length = len(unigram_ids)
 
 		# t
-		t_batch[batch_idx, :t_length] = sentence
+		t_batch[batch_idx, :t_length] = unigram_ids
+		bigram_batch[batch_idx, :t_length] = bigram_ids
 		t_length_batch.append(t_length)
 
 	x_batch = (x_batch - x_mean) / x_std
@@ -249,10 +270,11 @@ def features_to_minibatch(features, sentences, max_feature_length, max_sentence_
 	if gpu:
 		x_batch = cuda.to_gpu(x_batch.astype(np.float32))
 		t_batch = cuda.to_gpu(t_batch.astype(np.int32))
+		bigram_batch = cuda.to_gpu(bigram_batch.astype(np.int32))
 		x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
 		t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
-	return x_batch, x_length_batch, t_batch, t_length_batch
+	return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch
 
 class AugmentationOption():
 	def __init__(self):
@@ -322,14 +344,14 @@ class TestMinibatchIterator(object):
 		assert len(indices) > 0
 
 		extracted_features, sentences, max_feature_length, max_sentence_length = extract_features_by_indices(indices, self.buckets_signal[bucket_idx], self.buckets_sentence[bucket_idx], option=self.option)
-		x_batch, x_length_batch, t_batch, t_length_batch = features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, self.id_blank, self.mean, self.std, gpu=self.gpu)
+		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu=self.gpu)
 
 		self.pos += batchsize
 		if self.pos >= num_data:
 			self.pos = 0
 			self.bucket_idx += 1
 
-		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, self.pos / num_data
+		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, self.pos / num_data
 
 	next = __next__  # Python 2
 
@@ -369,7 +391,7 @@ class DevelopmentMinibatchIterator(object):
 		assert len(indices) > 0
 
 		extracted_features, sentences, max_feature_length, max_sentence_length = self.dataset.extract_features_by_indices(indices, signal_list, sentence_list, option=self.option)
-		x_batch, x_length_batch, t_batch, t_length_batch = self.dataset.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=self.gpu)
+		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.dataset.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=self.gpu)
 
 		self.pos += batchsize
 		if self.pos >= len(indices_dev):
@@ -380,7 +402,7 @@ class DevelopmentMinibatchIterator(object):
 			self.group_idx = 0
 			self.bucket_idx += 1
 
-		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx
+		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx
 
 	next = __next__  # Python 2
 		
@@ -406,13 +428,16 @@ class TrainingMinibatchIterator(object):
 	next = __next__  # Python 2
 
 class Dataset(object):
-	def __init__(self, data_path, batchsizes, buckets_limit=None, num_signals_per_file=1000, num_buckets_to_store_memory=200, dev_split=0.01, seed=0, id_blank=0):
+	def __init__(self, data_path, batchsizes, buckets_limit=None, num_signals_per_file=1000, num_buckets_to_store_memory=200, 
+		token_ids=None, dev_split=0.01, seed=0, id_blank=0):
+		assert token_ids is not None
 		self.num_signals_per_file = num_signals_per_file
 		self.num_signals_memory = num_buckets_to_store_memory
 		self.dev_split = dev_split
 		self.data_path = data_path
 		self.buckets_limit = buckets_limit
 		self.id_blank = 0
+		self.token_ids = token_ids
 		self.batchsizes = batchsizes
 
 		signal_path = os.path.join(data_path, "signal")
@@ -551,7 +576,7 @@ class Dataset(object):
 		return sentence_list
 
 	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
-		return features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.id_blank, self.mean, self.std, gpu)
+		return features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu)
 
 	def extract_features_by_indices(self, indices, signal_list, sentence_list, option=None):
 		return extract_features_by_indices(indices, signal_list, sentence_list, option, self.fbank)
@@ -573,9 +598,9 @@ class Dataset(object):
 		indices = indices[:batchsize]
 
 		extracted_features, sentences, max_feature_length, max_sentence_length = self.extract_features_by_indices(indices, signal_list, sentence_list, option=option)
-		x_batch, x_length_batch, t_batch, t_length_batch = self.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
+		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
 
-		return x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx
+		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx
 
 	def increment_num_updates(self, bucket_idx, group_idx):
 		self.buckets_num_updates[bucket_idx][group_idx] += 1

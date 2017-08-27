@@ -182,7 +182,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			# 転記の読み込みと音声の切り出し
 			signal_transcription_pairs = generate_signal_transcription_pairs(os.path.join(trn_dir, trn_filename), audio, sampling_rate)
 
-			for idx, (signal_sequence, unigram_ids, sentence) in enumerate(signal_transcription_pairs):
+			for idx, (signal_sequence, sentence) in enumerate(signal_transcription_pairs):
 				# データを確認する場合は書き出し
 				# wavfile.write("/home/stark/sandbox/debug/{}.wav".format(sentence), config.sampling_rate, signal_sequence)
 				

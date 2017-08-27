@@ -13,9 +13,9 @@ import config
 from error import compute_minibatch_error
 from dataset import Dataset, cache_path, AugmentationOption
 from model import load_model, save_model, build_model, save_params
-from util import stdout, printb
+from util import stdout, printb, printr
 from optim import get_current_learning_rate, decay_learning_rate, get_optimizer
-from vocab import get_unigram_ids
+from vocab import get_unigram_ids, ID_BLANK
 
 def formatted_error(error_values):
 	errors = []
@@ -31,15 +31,16 @@ def preloading_loop(dataset, augmentation, num_load, queue):
 
 def main():
 	# データの読み込み
-	UNIGRAM_IDS, _, BLANK = get_unigram_ids()
-	vocab_size = len(UNIGRAM_IDS)
+	unigram_token_ids, _ = get_unigram_ids()
+	vocab_size = len(unigram_token_ids)
 
 	# バケツごとのミニバッチサイズ
 	# GTX 1080 1台基準
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	cache_size = 0 if args.multiprocessing else 200	# マルチプロセスの場合キャッシュごとコピーされるのでメモリを圧迫する
-	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, id_blank=BLANK, num_buckets_to_store_memory=cache_size)
+	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, token_ids=unigram_token_ids, id_blank=ID_BLANK, 
+		num_buckets_to_store_memory=cache_size)
 	dataset.dump_information()
 
 	augmentation = AugmentationOption()
@@ -92,6 +93,8 @@ def main():
 
 	# 学習ループ
 	total_iterations_train = dataset.get_total_training_iterations()
+	total_iterations_train = 2
+
 	for epoch in xrange(1, args.total_epoch + 1):
 		printb("Epoch %d" % epoch)
 		start_time = time.time()
@@ -119,7 +122,7 @@ def main():
 
 				for batch_idx, data in enumerate(minibatch_list):
 					try:
-						x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx = data
+						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = data
 
 						if args.gpu_device >= 0:
 							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
@@ -129,7 +132,7 @@ def main():
 
 						# 誤差の計算
 						y_batch = model(x_batch)	# list of variables
-						loss = F.connectionist_temporal_classification(y_batch, t_batch, BLANK, x_length_batch, t_length_batch)
+						loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
 						# NaN
 						loss_value = float(loss.data)
@@ -158,13 +161,13 @@ def main():
 			buckets_errors = []
 			for batch in iterator:
 				try:
-					x_batch, x_length_batch, t_batch, t_length_batch, bucket_idx, group_idx = batch
+					x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = batch
 
 					printr("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
 
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
-					error = compute_minibatch_error(y_batch, t_batch, BLANK)
+					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK)
 
 					while bucket_idx >= len(buckets_errors):
 						buckets_errors.append([])
