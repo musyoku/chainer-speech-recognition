@@ -8,6 +8,8 @@ import numpy as np
 import chainer.functions as F
 from chainer import cuda, serializers
 from multiprocessing import Process, Queue
+sys.path.append("../")
+import gram_ctc
 sys.path.append("../../")
 import config
 from error import compute_minibatch_error
@@ -15,7 +17,7 @@ from dataset import Dataset, cache_path, AugmentationOption
 from model import load_model, save_model, build_model, save_params
 from util import stdout, printb, printr
 from optim import get_current_learning_rate, decay_learning_rate, get_optimizer
-from vocab import get_unigram_ids, ID_BLANK
+from vocab import load_unigram_and_bigram_ids, ID_BLANK
 
 def formatted_error(error_values):
 	errors = []
@@ -31,7 +33,7 @@ def preloading_loop(dataset, augmentation, num_load, queue):
 
 def main():
 	# データの読み込み
-	token_ids, _ = get_unigram_ids()
+	token_ids, _ = load_unigram_and_bigram_ids("../../bigram.list")
 	vocab_size = len(token_ids)
 
 	# バケツごとのミニバッチサイズ
@@ -125,12 +127,15 @@ def main():
 						if args.gpu_device >= 0:
 							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
 							t_batch = cuda.to_gpu(t_batch.astype(np.int32))
+							bigram_batch = cuda.to_gpu(bigram_batch.astype(np.int32))
 							x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
 							t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
 						# 誤差の計算
 						y_batch = model(x_batch)	# list of variables
-						loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+						loss = gram_ctc.gram_ctc(y_batch, t_batch, bigram_batch, ID_BLANK, x_length_batch, t_length_batch)
+						if args.joint_training:
+							loss += F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
 						# NaN
 						loss_value = float(loss.data)
@@ -206,6 +211,7 @@ if __name__ == "__main__":
 
 	parser.add_argument("--augmentation", "-augmentation", default=False, action="store_true")
 	parser.add_argument("--multiprocessing", "-multi", default=False, action="store_true")
+	parser.add_argument("--joint-training", "-joint", default=False, action="store_true")
 	
 	parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
 	parser.add_argument("--ndim-h", "-dh", type=int, default=128)
