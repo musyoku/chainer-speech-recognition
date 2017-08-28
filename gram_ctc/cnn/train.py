@@ -33,15 +33,15 @@ def preloading_loop(dataset, augmentation, num_load, queue):
 
 def main():
 	# データの読み込み
-	token_ids, _ = load_unigram_and_bigram_ids("../../bigram.list")
-	vocab_size = len(token_ids)
+	vocab_token_ids, vocab_id_tokens = load_unigram_and_bigram_ids("../../bigram.list")
+	vocab_size = len(vocab_token_ids)
 
 	# バケツごとのミニバッチサイズ
 	# GTX 1080 1台基準
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	cache_size = 0 if args.multiprocessing else 200	# マルチプロセスの場合キャッシュごとコピーされるのでメモリを圧迫する
-	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, token_ids=token_ids, id_blank=ID_BLANK, 
+	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
 		num_buckets_to_store_memory=cache_size)
 	dataset.dump_information()
 
@@ -170,7 +170,7 @@ def main():
 
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
-					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK)
+					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
 
 					while bucket_idx >= len(buckets_errors):
 						buckets_errors.append([])

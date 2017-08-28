@@ -23,9 +23,12 @@ def save_model(dirname, model):
 		os.remove(model_filename)
 	serializers.save_hdf5(model_filename, model)
 
-def save_params(dirname):
+def save_params(dirname, overwrite=False):
 	param_filename = dirname + "/params.json"
 
+	if os.path.isfile(param_filename) and overwrite is False:
+		return
+		
 	try:
 		os.mkdir(dirname)
 	except:

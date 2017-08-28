@@ -16,13 +16,13 @@ from util import printb, printr
 from vocab import load_unigram_and_bigram_ids, ID_BLANK
 
 def main():
-	token_ids, id_tokens = load_unigram_and_bigram_ids("../../bigram.list")
+	vocab_token_ids, vocab_id_tokens = load_unigram_and_bigram_ids("../../bigram.list")
 
 	# ミニバッチを取れないものは除外
 	# GTX 1080 1台基準
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 
-	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, token_ids=token_ids, id_blank=ID_BLANK)
+	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK)
 	dataset.dump_information()
 
 	augmentation = AugmentationOption()
@@ -38,8 +38,8 @@ def main():
 		chainer.cuda.get_device(args.gpu_device).use()
 		model.to_gpu(args.gpu_device)
 	xp = model.xp
+	statistics = xp.zeros((len(vocab_token_ids),), dtype=xp.int32)
 
-	# バリデーション
 	with chainer.using_config("train", False):
 		iterator = dataset.get_iterator_dev(batchsizes, None, gpu=args.gpu_device >= 0)
 		buckets_errors = []
@@ -51,24 +51,22 @@ def main():
 
 				y_batch = model(x_batch, split_into_variables=False)
 				y_batch = xp.argmax(y_batch.data, axis=2)
-				error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, token_ids, id_tokens, print_sequences=True)
-
-				while bucket_idx >= len(buckets_errors):
-					buckets_errors.append([])
-
-				buckets_errors[bucket_idx].append(error)
+				y_batch = xp.ravel(y_batch)
+				nonzero = xp.nonzero(y_batch)
+				for index in nonzero:
+					token_id = y_batch[index]
+					statistics[token_id] += 1
 
 			except Exception as e:
 				print(" ", bucket_idx, str(e))
 
-		avg_errors = []
-		for errors in buckets_errors:
-			avg_errors.append(sum(errors) / len(errors))
-
 		printr("")
-		printb("bucket	CER")
-		for bucket_idx, error in enumerate(avg_errors):
-			print("{}	{}".format(bucket_idx + 1, error * 100))
+		ranking = {}
+		for token_id in range(len(vocab_id_tokens)):
+			ranking[vocab_id_tokens[token_id]] = statistics[token_id]
+		for token, count in sorted(ranking.items(), key=lambda x:x[1]):
+			print(token, count)
+
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()

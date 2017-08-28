@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 from util import printb, printr, stdout
+from vocab import convert_sentence_to_unigram_ids
 
 def compute_character_error_rate(r, h):
 	if len(r) == 0:
@@ -21,40 +22,46 @@ def compute_character_error_rate(r, h):
 				d[i][j] = min(substitute, insert, delete)
 	return float(d[len(r)][len(h)]) / len(r)
 
-def compute_minibatch_error(y_batch, t_batch, BLANK, print_sequences=False, vocab=None):
+def compute_minibatch_error(y_batch, t_batch, BLANK, vocab_token_to_id, vocab_id_to_token, print_sequences=False):
 	sum_error = 0
 
-	if print_sequences and vocab is not None:
+	if print_sequences:
 		printr("")
 
 	for batch_idx, (argmax_sequence, true_sequence) in enumerate(zip(y_batch, t_batch)):
 		target_sequence = []
-		for token in true_sequence:
-			if token == BLANK:
+		for token_id in true_sequence:
+			if token_id == BLANK:
 				continue
-			target_sequence.append(int(token))
+			target_sequence.append(int(token_id))
 		pred_seqence = []
 		prev_token = BLANK
-		for token in argmax_sequence:
-			if token == BLANK:
+		for token_id in argmax_sequence:
+			if token_id == BLANK:
 				prev_token = BLANK
 				continue
-			if token == prev_token:
+			if token_id == prev_token:
 				continue
-			pred_seqence.append(int(token))
-			prev_token = token
+			pred_seqence.append(int(token_id))
+			prev_token = token_id
+
+		# 一旦ユニグラムの文字列に戻す
+		pred_sentence = ""
+		for token_id in pred_seqence:
+			pred_sentence += vocab_id_to_token[token_id]
+		pred_seqence = convert_sentence_to_unigram_ids(pred_sentence, vocab_token_to_id)
 
 		sum_error += compute_character_error_rate(target_sequence, pred_seqence)
 
-		if print_sequences and vocab is not None:
+		if print_sequences and vocab_id_to_token is not None:
 			print("#{}".format(batch_idx + 1))
 			pred_str = ""
-			for char_id in pred_seqence:
-				pred_str += vocab[char_id]
+			for token_id in pred_seqence:
+				pred_str += vocab_id_to_token[token_id]
 			printb("pred:	" + pred_str)
 			target_str = ""
-			for char_id in target_sequence:
-				target_str += vocab[char_id]
+			for token_id in target_sequence:
+				target_str += vocab_id_to_token[token_id]
 			print("true:	" + target_str)
 
 	return sum_error / len(y_batch)
