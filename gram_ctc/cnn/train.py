@@ -2,15 +2,15 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import sys, argparse, time, cupy, math, os, binascii
+import sys, argparse, time, cupy, math, os, binascii, signal
 import chainer
 import numpy as np
 import chainer.functions as F
 from chainer import cuda, serializers
 from multiprocessing import Process, Queue
-sys.path.append("../")
+sys.path.append("..")
 import gram_ctc
-sys.path.append("../../")
+sys.path.append(os.path.join("..", ".."))
 import config
 from error import compute_minibatch_error
 from dataset import Dataset, cache_path, AugmentationOption
@@ -84,7 +84,7 @@ def main():
 		optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
 	if args.weight_decay > 0:
 		optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
-	final_learning_rate = 1e-4
+	final_learning_rate = 1e-6
 	total_time = 0
 
 	# マルチプロセスでデータを準備する場合
@@ -92,6 +92,24 @@ def main():
 		num_preloads = 30
 		queue = preloading_loop(dataset, augmentation, num_preloads, Queue())
 		preloading_process = None
+
+	# シグナルで学習率の制御
+	pid = os.getpid()
+	print("kill -USR1 {}".format(pid))
+	print("kill -USR2 {}".format(pid))
+
+	def signal_usr1_handler(signum, stack):
+		decay_learning_rate(optimizer, 0.1, final_learning_rate)
+		printr("")
+		print("new learning rate: {}".format(get_current_learning_rate(optimizer)))
+
+	def signal_usr2_handler(signum, stack):
+		args.joint_training = not args.joint_training
+		printr("")
+		print("joint training: {}".format(args.joint_training))
+
+	signal.signal(signal.SIGUSR1, signal_usr1_handler)
+	signal.signal(signal.SIGUSR2, signal_usr2_handler)
 
 	# 学習ループ
 	total_iterations_train = dataset.get_total_training_iterations()

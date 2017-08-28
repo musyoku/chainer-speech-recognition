@@ -2,13 +2,13 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import sys, argparse, time, cupy, math, os, binascii
+import sys, argparse, time, cupy, math, os, binascii, signal
 import chainer
 import numpy as np
 import chainer.functions as F
 from chainer import cuda, serializers
 from multiprocessing import Process, Queue
-sys.path.append("../../")
+sys.path.append(os.path.join("..", ".."))
 import config
 from error import compute_minibatch_error
 from dataset import Dataset, cache_path, AugmentationOption
@@ -31,15 +31,15 @@ def preloading_loop(dataset, augmentation, num_load, queue):
 
 def main():
 	# データの読み込み
-	token_ids, _ = get_unigram_ids()
-	vocab_size = len(token_ids)
+	vocab_token_ids, vocab_id_tokens = get_unigram_ids()
+	vocab_size = len(vocab_token_ids)
 
 	# バケツごとのミニバッチサイズ
 	# GTX 1080 1台基準
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	cache_size = 0 if args.multiprocessing else 200	# マルチプロセスの場合キャッシュごとコピーされるのでメモリを圧迫する
-	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, token_ids=token_ids, id_blank=ID_BLANK, 
+	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
 		num_buckets_to_store_memory=cache_size)
 	dataset.dump_information()
 
@@ -82,7 +82,7 @@ def main():
 		optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
 	if args.weight_decay > 0:
 		optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
-	final_learning_rate = 1e-4
+	final_learning_rate = 1e-6
 	total_time = 0
 
 	# マルチプロセスでデータを準備する場合
@@ -90,6 +90,17 @@ def main():
 		num_preloads = 30
 		queue = preloading_loop(dataset, augmentation, num_preloads, Queue())
 		preloading_process = None
+
+	# シグナルで学習率の制御
+	pid = os.getpid()
+	print("kill -USR1 {}".format(pid))
+
+	def signal_usr1_handler(signum, stack):
+		decay_learning_rate(optimizer, 0.1, final_learning_rate)
+		printr("")
+		print("new learning rate: {}".format(get_current_learning_rate(optimizer)))
+
+	signal.signal(signal.SIGUSR1, signal_usr1_handler)
 
 	# 学習ループ
 	total_iterations_train = dataset.get_total_training_iterations()
@@ -165,7 +176,7 @@ def main():
 
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
-					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK)
+					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
 
 					while bucket_idx >= len(buckets_errors):
 						buckets_errors.append([])
