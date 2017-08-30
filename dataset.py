@@ -146,7 +146,7 @@ def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 			batch.append((signal, sentence))
 	return batch
 
-def extract_features_by_indices(indices, signal_list, sentence_list, option=None, fbank=None):
+def extract_features_by_indices(indices, signal_list, sentence_list, option=None, apply_cmn=False, fbank=None):
 	config = chainer.config
 	max_feature_length = 0
 	max_sentence_length = 0
@@ -168,6 +168,11 @@ def extract_features_by_indices(indices, signal_list, sentence_list, option=None
 		# データ拡大
 		if option and option.using_augmentation():
 			specgram = fft.augment_specgram(specgram, option.change_speech_rate, option.change_vocal_tract)
+
+		# CMN 
+		if apply_cmn:
+			log_specgram = np.log(specgram)
+			specgram = np.exp(np.log(specgram) - np.mean(log_specgram, axis=0))
 
 		logmel = fft.compute_logmel(specgram, config.sampling_rate, fbank=fbank, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, nfilt=config.num_mel_filters, winfunc=config.window_func)
 		logmel, delta, delta_delta = fft.compute_deltas(logmel)
@@ -330,7 +335,7 @@ class TestMinibatchIterator(object):
 		indices = np.arange(self.pos, self.pos + batchsize)
 		assert len(indices) > 0
 
-		extracted_features, sentences, max_feature_length, max_sentence_length = extract_features_by_indices(indices, self.buckets_signal[bucket_idx], self.buckets_sentence[bucket_idx], option=self.option)
+		extracted_features, sentences, max_feature_length, max_sentence_length = extract_features_by_indices(indices, self.buckets_signal[bucket_idx], self.buckets_sentence[bucket_idx], option=self.option, apply_cmn=self.apply_cmn)
 		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu=self.gpu)
 
 		self.pos += batchsize
@@ -416,7 +421,7 @@ class TrainingMinibatchIterator(object):
 
 class Dataset(object):
 	def __init__(self, data_path, batchsizes, buckets_limit=None, num_signals_per_file=1000, num_buckets_to_store_memory=200, 
-		token_ids=None, dev_split=0.01, seed=0, id_blank=0):
+		token_ids=None, dev_split=0.01, seed=0, id_blank=0, apply_cmn=False, global_normalization=True):
 		assert token_ids is not None
 		self.num_signals_per_file = num_signals_per_file
 		self.num_signals_memory = num_buckets_to_store_memory
@@ -426,6 +431,8 @@ class Dataset(object):
 		self.id_blank = 0
 		self.token_ids = token_ids
 		self.batchsizes = batchsizes
+		self.apply_cmn = apply_cmn
+		self.global_normalization = global_normalization
 
 		signal_path = os.path.join(data_path, "signal")
 		sentence_path = os.path.join(data_path, "sentence")
@@ -442,10 +449,11 @@ class Dataset(object):
 				raise Exception()
 			if len(signal_files) != len(sentence_files):
 				raise Exception()
-			if os.path.isfile(mean_filename) == False:
-				raise Exception()
-			if os.path.isfile(std_filename) == False:
-				raise Exception()
+			if global_normalization:
+				if os.path.isfile(mean_filename) == False:
+					raise Exception()
+				if os.path.isfile(std_filename) == False:
+					raise Exception()
 		except:
 			raise Exception("Run dataset.py before starting training.")
 
@@ -566,7 +574,7 @@ class Dataset(object):
 		return features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu)
 
 	def extract_features_by_indices(self, indices, signal_list, sentence_list, option=None):
-		return extract_features_by_indices(indices, signal_list, sentence_list, option, self.fbank)
+		return extract_features_by_indices(indices, signal_list, sentence_list, option, self.apply_cmn, self.fbank)
 
 	def get_minibatch(self, option=None, gpu=True):
 		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]

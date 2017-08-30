@@ -43,7 +43,7 @@ def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False, glo
 		delta_delta = normalize(delta_delta)
 
 	if global_normalization:
-		from dataset import cache_path
+		cache_path = "/home/aibo/sandbox/wav_cmn"
 		mean = np.load(os.path.join(cache_path, "mean.npy")).astype(np.float32)[..., 0]
 		std = np.load(os.path.join(cache_path, "std.npy")).astype(np.float32)[..., 0]
 		assert np.isnan(np.sum(mean)) == False
@@ -166,7 +166,8 @@ def main(args):
 	for idx, signal in enumerate(features):
 		plot_features(args.out_dir, signal, sampling_rate, "{}.png".format(idx + 1), apply_cmn=False)
 		plot_features(args.out_dir, signal, sampling_rate, "{}.cmn.png".format(idx + 1), apply_cmn=True)
-		plot_features(args.out_dir, signal, sampling_rate, "{}.norm.png".format(idx + 1), apply_cmn=True, global_normalization=True)
+		plot_features(args.out_dir, signal, sampling_rate, "{}.norm.png".format(idx + 1), apply_cmn=False, global_normalization=True)
+		plot_features(args.out_dir, signal, sampling_rate, "{}.cmn.norm.png".format(idx + 1), apply_cmn=True, global_normalization=True)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()

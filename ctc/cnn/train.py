@@ -41,7 +41,7 @@ def main():
 
 	cache_size = 0 if args.multiprocessing else 200	# マルチプロセスの場合キャッシュごとコピーされるのでメモリを圧迫する
 	dataset = Dataset(args.dataset_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
-		num_buckets_to_store_memory=cache_size)
+		num_buckets_to_store_memory=cache_size, apply_cmn=args.apply_cmn)
 	dataset.dump_information()
 
 	augmentation = AugmentationOption()
@@ -133,6 +133,8 @@ def main():
 				for batch_idx, data in enumerate(minibatch_list):
 					try:
 						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = data
+
+						print(np.mean(x_batch, axis=3), np.var(x_batch, axis=3))
 
 						if args.gpu_device >= 0:
 							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
@@ -236,6 +238,7 @@ if __name__ == "__main__":
 
 	parser.add_argument("--buckets-limit", type=int, default=None)
 	parser.add_argument("--dataset-path", "-data", type=str, default=None)
+	parser.add_argument("--apply-cmn", "-cmn", default=False, action="store_true")
 	parser.add_argument("--seed", "-seed", type=int, default=0)
 	args = parser.parse_args()
 

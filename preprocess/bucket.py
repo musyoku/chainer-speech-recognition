@@ -1,7 +1,7 @@
 # coding: utf-8
 from __future__ import division
 from __future__ import print_function
-import os, codecs, re, sys, math, chainer, pickle, acoustics
+import os, codecs, re, sys, math, chainer, pickle, acoustics, argparse
 import numpy as np
 import scipy.io.wavfile as wavfile
 from chainer import cuda
@@ -84,7 +84,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		buckets_file_indices[bucket_idx] += 1
 		return True
 
-	def compute_mean_and_std(bucket_idx, pre_normalization=False):
+	def compute_mean_and_std(bucket_idx, apply_cmn=False):
 		num_signals = len(buckets_signal[bucket_idx])
 		assert num_signals > 0
 		mean = 0
@@ -94,7 +94,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			spec = fft.get_specgram(signal, config.sampling_rate, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, winfunc=config.window_func)
 
 			# ケプストラム平均正規化
-			if pre_normalization:
+			if apply_cmn:
 				log_spec = np.log(spec + 1e-16)
 				spec = np.exp(log_spec - np.mean(log_spec, axis=0))
 
@@ -107,16 +107,16 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 
 			# 発話ごとに平均0、分散1にする
 			# 発話ごとの場合データが少ないので全軸で取らないとノイズが増大する
-			if pre_normalization:
-				logmel = normalize_feature(logmel)
-				delta = normalize_feature(delta)
-				delta_delta = normalize_feature(delta_delta)
+			# if apply_cmn:
+			# 	logmel = normalize_feature(logmel)
+			# 	delta = normalize_feature(delta)
+			# 	delta_delta = normalize_feature(delta_delta)
 
 			# 目視チェック
-			# sys.path.append(os.path.join("..", "visual"))
-			# from specgram import _plot_features
-			# _plot_features("/home/aibo/sandbox/plot", signal, config.sampling_rate, logmel, delta, delta_delta, spec, 
-			# 	str(np.random.randint(0, 5000)) + (".norm." if pre_normalization else "") + ".png")
+			sys.path.append(os.path.join("..", "visual"))
+			from specgram import _plot_features
+			_plot_features("/home/aibo/sandbox/plot", signal, config.sampling_rate, logmel, delta, delta_delta, spec, 
+				str(np.random.randint(0, 5000)) + (".norm." if apply_cmn else "") + ".png")
 
 			logmel = logmel.T
 			delta = delta.T
@@ -132,7 +132,6 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 			if config.using_delta_delta:
 				feature = np.concatenate((feature, delta_delta[:, None, :]), axis=1)
 				div += 1
-
 
 			# 目視チェック
 			# sys.path.append("../visual")
@@ -202,7 +201,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 				if write_to_file:
 					printr("Computing mean and std of bucket {} ...".format(bucket_idx))
 
-					mean, std = compute_mean_and_std(bucket_idx)
+					mean, std = compute_mean_and_std(bucket_idx, args.apply_cmn)
 					feature_mean += mean
 					feature_std += std
 					statistics_denominator += 1
@@ -220,7 +219,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 	if data_limit_exceeded == False:
 		for bucket_idx, bucket in enumerate(buckets_signal):
 			if len(bucket) > 0:
-				mean, std = compute_mean_and_std(bucket_idx)
+				mean, std = compute_mean_and_std(bucket_idx, args.apply_cmn)
 				feature_mean += mean
 				feature_std += std
 				statistics_denominator += 1
@@ -246,6 +245,10 @@ if __name__ == "__main__":
 	mkdir(os.path.join(cache_path, "signal"))
 	mkdir(os.path.join(cache_path, "sentence"))
 	np.random.seed(0)
+
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--apply-cmn", "-cmn", default=False, action="store_true")
+	args = parser.parse_args()
 
 	# すべての.wavを読み込み、一定の長さごとに保存
 	generate_buckets(wav_path_list, transcription_path_list, cache_path, buckets_limit=20, data_limit=None, num_signals_per_file=500)
