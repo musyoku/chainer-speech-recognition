@@ -8,7 +8,7 @@ from chainer import cuda
 sys.path.append("../")
 import config, fft
 from util import stdout, printb, printr
-from dataset import wav_path_list, transcription_path_list, cache_path, get_bucket_index, generate_signal_transcription_pairs
+from dataset import get_bucket_index, generate_signal_transcription_pairs
 
 wav_path_list = [
 	"/home/aibo/sandbox/CSJ/WAV/core",
@@ -27,7 +27,7 @@ def normalize_feature(array):
 	array = (array - mean) / stddev
 	return array
 
-def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, data_limit, num_signals_per_file=1000):
+def generate_buckets(wav_paths, transcription_paths, dataset_path, buckets_limit, data_limit, num_signals_per_file=1000):
 	assert len(wav_paths) > 0
 	assert len(transcription_paths) > 0
 
@@ -72,12 +72,12 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		num_signals = len(buckets_signal[bucket_idx])
 		assert num_signals > 0
 
-		with open (os.path.join(cache_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_signals)), "wb") as f:
+		with open (os.path.join(dataset_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_signals)), "wb") as f:
 			pickle.dump(buckets_signal[bucket_idx], f)
 
 		num_sentences = len(buckets_sentence[bucket_idx])
 		assert num_signals == num_sentences
-		with open (os.path.join(cache_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_sentences)), "wb") as f:
+		with open (os.path.join(dataset_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_sentences)), "wb") as f:
 			pickle.dump(buckets_sentence[bucket_idx], f)
 		buckets_signal[bucket_idx] = []
 		buckets_sentence[bucket_idx] = []
@@ -231,8 +231,8 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 
 	feature_mean /= statistics_denominator
 	feature_std /= statistics_denominator
-	np.save(os.path.join(cache_path, "mean.npy"), feature_mean.swapaxes(0, 1))
-	np.save(os.path.join(cache_path, "std.npy"), feature_std.swapaxes(0, 1))
+	np.save(os.path.join(dataset_path, "mean.npy"), feature_mean.swapaxes(0, 1))
+	np.save(os.path.join(dataset_path, "std.npy"), feature_std.swapaxes(0, 1))
 
 def mkdir(d):
 	try:
@@ -241,14 +241,18 @@ def mkdir(d):
 		pass
 
 if __name__ == "__main__":
-	mkdir(cache_path)
-	mkdir(os.path.join(cache_path, "signal"))
-	mkdir(os.path.join(cache_path, "sentence"))
-	np.random.seed(0)
-
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--apply-cmn", "-cmn", default=False, action="store_true")
+	parser.add_argument("--dataset-path", "-data", type=str, default=None)
 	args = parser.parse_args()
 
+	assert args.dataset_path is not None
+
+	mkdir(args.dataset_path)
+	mkdir(os.path.join(args.dataset_path, "signal"))
+	mkdir(os.path.join(args.dataset_path, "sentence"))
+	np.random.seed(0)
+
+
 	# すべての.wavを読み込み、一定の長さごとに保存
-	generate_buckets(wav_path_list, transcription_path_list, cache_path, buckets_limit=20, data_limit=None, num_signals_per_file=500)
+	generate_buckets(wav_path_list, transcription_path_list, args.dataset_path, buckets_limit=20, data_limit=None, num_signals_per_file=500)
