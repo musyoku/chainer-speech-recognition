@@ -10,6 +10,17 @@ import config, fft
 from util import stdout, printb, printr
 from dataset import wav_path_list, transcription_path_list, cache_path, get_bucket_index, generate_signal_transcription_pairs
 
+wav_path_list = [
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
+]
+# 変換済みの書き起こしデータ
+# https://github.com/musyoku/csj-preprocesser
+transcription_path_list = [
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
+]
+
 def normalize_feature(array):
 	mean = np.mean(array)
 	stddev = np.std(array)
