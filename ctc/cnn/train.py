@@ -134,7 +134,7 @@ def main():
 					try:
 						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = data
 
-						print(np.mean(x_batch, axis=3), np.var(x_batch, axis=3))
+						# print(np.mean(x_batch, axis=3), np.var(x_batch, axis=3))
 
 						if args.gpu_device >= 0:
 							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
