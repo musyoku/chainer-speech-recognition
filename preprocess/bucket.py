@@ -73,7 +73,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		buckets_file_indices[bucket_idx] += 1
 		return True
 
-	def compute_mean_and_std(bucket_idx, pre_normalization=True):
+	def compute_mean_and_std(bucket_idx, pre_normalization=False):
 		num_signals = len(buckets_signal[bucket_idx])
 		assert num_signals > 0
 		mean = 0
@@ -102,9 +102,10 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 				delta_delta = normalize_feature(delta_delta)
 
 			# 目視チェック
-			# sys.path.append("../visual")
+			# sys.path.append(os.path.join("..", "visual"))
 			# from specgram import _plot_features
-			# _plot_features("/home/aibo/sandbox/plot", signal, config.sampling_rate, logmel, delta, delta_delta, spec, str(np.random.randint(0, 5000)) + ".png")
+			# _plot_features("/home/aibo/sandbox/plot", signal, config.sampling_rate, logmel, delta, delta_delta, spec, 
+			# 	str(np.random.randint(0, 5000)) + (".norm." if pre_normalization else "") + ".png")
 
 			logmel = logmel.T
 			delta = delta.T
@@ -151,7 +152,7 @@ def generate_buckets(wav_paths, transcription_paths, cache_path, buckets_limit, 
 		if data_limit_exceeded:
 			break
 
-		for data_idx, wav_id in enumerate(wav_ids):
+		for data_idx, wav_id in enumerate(sorted(wav_ids)):
 
 			if data_limit_exceeded:
 				break
@@ -233,6 +234,7 @@ if __name__ == "__main__":
 	mkdir(cache_path)
 	mkdir(os.path.join(cache_path, "signal"))
 	mkdir(os.path.join(cache_path, "sentence"))
+	np.random.seed(0)
 
 	# すべての.wavを読み込み、一定の長さごとに保存
 	generate_buckets(wav_path_list, transcription_path_list, cache_path, buckets_limit=20, data_limit=None, num_signals_per_file=500)

@@ -13,7 +13,7 @@ import gram_ctc
 sys.path.append(os.path.join("..", ".."))
 import config
 from error import compute_minibatch_error
-from dataset import Dataset, cache_path, AugmentationOption
+from dataset import Dataset, AugmentationOption
 from model import load_model, save_model, build_model, save_params
 from util import stdout, printb, printr
 from optim import get_current_learning_rate, decay_learning_rate, get_optimizer
@@ -32,6 +32,7 @@ def preloading_loop(dataset, augmentation, num_load, queue):
 	return queue
 
 def main():
+	assert args.dataset_path is not None
 	# データの読み込み
 	vocab_token_ids, vocab_id_tokens = load_unigram_and_bigram_ids("../../bigram.list")
 	vocab_size = len(vocab_token_ids)
@@ -41,7 +42,7 @@ def main():
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 
 	cache_size = 0 if args.multiprocessing else 200	# マルチプロセスの場合キャッシュごとコピーされるのでメモリを圧迫する
-	dataset = Dataset(cache_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
+	dataset = Dataset(args.dataset_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
 		num_buckets_to_store_memory=cache_size)
 	dataset.dump_information()
 
@@ -141,6 +142,7 @@ def main():
 				for batch_idx, data in enumerate(minibatch_list):
 					try:
 						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = data
+						print(bigram_batch)
 
 						if args.gpu_device >= 0:
 							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
@@ -247,7 +249,7 @@ if __name__ == "__main__":
 	parser.add_argument("--model-dir", "-m", type=str, default="model")
 
 	parser.add_argument("--buckets-limit", type=int, default=None)
-	parser.add_argument("--data-limit", type=int, default=None)
+	parser.add_argument("--dataset-path", "-data", type=str, default=None)
 	parser.add_argument("--seed", "-seed", type=int, default=0)
 	args = parser.parse_args()
 

@@ -14,17 +14,17 @@ from util import stdout, printb
 from vocab import convert_sentence_to_unigram_tokens
 
 wav_path_list = [
-	"/home/stark/sandbox/CSJ/WAV/core",
-	"/home/stark/sandbox/CSJ/WAV/noncore",
+	"/home/aibo/sandbox/CSJ/WAV/core",
+	"/home/aibo/sandbox/CSJ/WAV/noncore",
 ]
 transcription_path_list = [
-	"/home/stark/sandbox/CSJ_/core",
-	"/home/stark/sandbox/CSJ_/noncore",
+	"/home/aibo/sandbox/CSJ_/core",
+	"/home/aibo/sandbox/CSJ_/noncore",
 ]
-cache_path = "/home/stark/sandbox/wav"
+cache_path = "/home/aibo/sandbox/wav"
 
-wav_path_test = "/home/stark/sandbox/CSJ/WAV/test"
-trn_path_test = "/home/stark/sandbox/CSJ_/test"
+wav_path_test = "/home/aibo/sandbox/CSJ/WAV/test"
+trn_path_test = "/home/aibo/sandbox/CSJ_/test"
 
 def get_bucket_index(signal, sampling_rate=16000, split_sec=0.5):
 	divider = sampling_rate * split_sec
