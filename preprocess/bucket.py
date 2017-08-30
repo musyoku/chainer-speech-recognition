@@ -105,18 +105,11 @@ def generate_buckets(wav_paths, transcription_paths, dataset_path, buckets_limit
 			assert delta.shape[0] > 0
 			assert delta_delta.shape[0] > 0
 
-			# 発話ごとに平均0、分散1にする
-			# 発話ごとの場合データが少ないので全軸で取らないとノイズが増大する
-			# if apply_cmn:
-			# 	logmel = normalize_feature(logmel)
-			# 	delta = normalize_feature(delta)
-			# 	delta_delta = normalize_feature(delta_delta)
-
 			# 目視チェック
-			sys.path.append(os.path.join("..", "visual"))
-			from specgram import _plot_features
-			_plot_features("/home/aibo/sandbox/plot", signal, config.sampling_rate, logmel, delta, delta_delta, spec, 
-				str(np.random.randint(0, 5000)) + (".norm." if apply_cmn else "") + ".png")
+			# sys.path.append(os.path.join("..", "visual"))
+			# from specgram import _plot_features
+			# _plot_features("/home/aibo/sandbox/plot", signal, config.sampling_rate, logmel, delta, delta_delta, spec, 
+			# 	str(np.random.randint(0, 5000)) + (".norm." if apply_cmn else "") + ".png")
 
 			logmel = logmel.T
 			delta = delta.T
