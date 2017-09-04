@@ -142,7 +142,6 @@ def main():
 				for batch_idx, data in enumerate(minibatch_list):
 					try:
 						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = data
-						print(bigram_batch)
 
 						if args.gpu_device >= 0:
 							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
