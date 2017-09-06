@@ -43,7 +43,7 @@ class Dataset():
 		self.apply_cmn = apply_cmn
 		self.global_normalization = global_normalization
 
-		self.reader = BucketsReader(data_path, buckets_limit, buckets_cache_size, buckets_cache_size, dev_split, seed)
+		self.reader = BucketsReader(data_path, buckets_limit, buckets_cache_size, dev_split, seed)
 
 		mean_filename = os.path.join(data_path, "mean.npy")
 		std_filename = os.path.join(data_path, "std.npy")

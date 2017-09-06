@@ -1,5 +1,6 @@
-import re
+import re, os, chainer
 import numpy as np
+from ..utils import printb
 
 def _get_bucket_index(signal, sampling_rate=16000, split_sec=0.5):
 	divider = sampling_rate * split_sec
