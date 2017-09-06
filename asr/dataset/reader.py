@@ -1,6 +1,10 @@
 import re
 import numpy as np
 
+def _get_bucket_index(signal, sampling_rate=16000, split_sec=0.5):
+	divider = sampling_rate * split_sec
+	return int(len(signal) // divider)
+
 def _fill(buckets_signal, buckets_sentence, buckets_num_data, buckets_num_updates, bucket_idx, group_idx):
 	while len(buckets_signal) <= bucket_idx:
 		buckets_signal.append([])
@@ -27,7 +31,7 @@ def generate_buckets_from_raw_data(wav_dir, trn_dir, buckets_limit=None):
 		buckets[bucket_idx].append(data)
 
 	def add_to_bukcet(signal, sentence):
-		bucket_idx = get_bucket_index(signal, config.sampling_rate, config.bucket_split_sec)
+		bucket_idx = _get_bucket_index(signal, config.sampling_rate, config.bucket_split_sec)
 		if buckets_limit and bucket_idx >= buckets_limit:
 			return bucket_idx
 		append_bucket(buckets_signal, bucket_idx, signal)
@@ -71,7 +75,7 @@ def generate_buckets_from_raw_data(wav_dir, trn_dir, buckets_limit=None):
 
 		sys.stdout.write("\r")
 		sys.stdout.write(stdout.CLEAR)
-		sys.stdout.write("Loading {} ({}/{}) ... shape={}, rate={}, min={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(duration)))
+		sys.stdout.write("Reading {} ({}/{}) ... shape={}, rate={}, min={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(duration)))
 		sys.stdout.flush()
 
 		# 転記の読み込みと音声の切り出し
@@ -108,9 +112,8 @@ def generate_buckets_from_raw_data(wav_dir, trn_dir, buckets_limit=None):
 	return buckets_signal, buckets_sentence
 
 class BucketsReader():
-	def __init__(self, data_path, buckets_limit=None, num_buckets_to_store_memory=200, 
-		dev_split=0.01, seed=0):
-		self.num_signals_memory = num_buckets_to_store_memory
+	def __init__(self, data_path, buckets_limit=None, buckets_cache_size=200, dev_split=0.01, seed=0):
+		self.buckets_cache_size = buckets_cache_size
 		self.dev_split = dev_split
 		self.data_path = data_path
 		self.buckets_limit = buckets_limit
@@ -141,7 +144,7 @@ class BucketsReader():
 				bucket_idx = int(m.group(1))
 				group_idx = int(m.group(2))
 				num_data = int(m.group(3))
-				_fill(buckets_signal, buckets_sentence, buckets_num_data, buckets_num_updates, bucket_idx, group_idx):
+				_fill(buckets_signal, buckets_sentence, buckets_num_data, buckets_num_updates, bucket_idx, group_idx)
 				buckets_num_data[bucket_idx][group_idx] = num_data
 
 		if buckets_limit is not None:
@@ -195,9 +198,9 @@ class BucketsReader():
 				self.buckets_signal[bucket_idx][group_idx] = signal_list
 
 		# 一定以上はメモリ解放
-		if self.num_signals_memory > 0:
+		if self.buckets_cache_size > 0:
 			self.cached_indices.append((bucket_idx, group_idx))
-			if len(self.cached_indices) > self.num_signals_memory:
+			if len(self.cached_indices) > self.buckets_cache_size:
 				_bucket_idx, _group_idx = self.cached_indices.pop(0)
 				self.buckets_signal[_bucket_idx][_group_idx] = None
 				self.buckets_sentence[bucket_idx][group_idx] = None
@@ -216,6 +219,30 @@ class BucketsReader():
 
 	def increment_num_updates(self, bucket_idx, group_idx):
 		self.buckets_num_updates[bucket_idx][group_idx] += 1
+
+	def sample_minibatch(self, batchsizes):
+		bucket_idx = np.random.choice(np.arange(len(self.buckets_signal)), size=1, p=self.bucket_distribution)[0]
+		group_idx = np.random.choice(np.arange(self.buckets_num_group[bucket_idx]), size=1)[0]
+
+		signal_list = self.get_signals_by_bucket_and_group(bucket_idx, group_idx)
+		sentence_list = self.get_sentences_by_bucket_and_group(bucket_idx, group_idx)
+
+		self.increment_num_updates(bucket_idx, group_idx)
+	
+		indices = self.buckets_indices_train[bucket_idx][group_idx]
+		np.random.shuffle(indices)
+
+		batchsize = batchsizes[bucket_idx]
+		batchsize = len(indices) if batchsize > len(indices) else batchsize
+		indices = indices[:batchsize]
+
+		batch = []
+		for data_idx in indices:
+			signal = signal_list[data_idx]
+			sentence = sentence_list[data_idx]
+			batch.append((signal, sentences))
+
+		return batch
 
 	def dump_num_updates(self):
 		for bucket_idx in range(len(self.buckets_signal)):
@@ -242,3 +269,12 @@ class BucketsReader():
 				num_dev += len(indices_dev)
 			print("{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, num_train, num_dev, config.bucket_split_sec * (bucket_idx + 1)))
 		print("total	{:>6}	{:>4}".format(total_train, total_dev))
+
+	def compute_total_training_iterations_with_batchsizes(self, batchsizes):
+		num_buckets = len(self.buckets_signal)
+		batchsizes = batchsizes[:num_buckets]
+		itr = 0
+		for indices_group_train, batchsize in zip(self.buckets_indices_train, batchsizes):
+			for indices_train in indices_group_train:
+				itr += int(math.ceil(len(indices_train) / batchsize))
+		return itr

@@ -35,17 +35,14 @@ def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 			batch.append((signal, sentence))
 	return batch
 
-def extract_features_by_indices(indices, signal_list, sentence_list, augmentation=None, apply_cmn=False, fbank=None):
+def extract_batch_features(batch, augmentation=None, apply_cmn=False, fbank=None):
 	config = chainer.config
 	max_feature_length = 0
 	max_sentence_length = 0
 	audio_features = []
 	sentences = []
 
-	for data_idx in indices:
-		signal = signal_list[data_idx]
-		sentence = sentence_list[data_idx]
-
+	for signal, sentence in batch:
 		# データ拡大
 		if augmentation and augmentation.add_noise:
 			gain = max(min(np.random.normal(200, 100), 500), 0)

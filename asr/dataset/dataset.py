@@ -8,15 +8,12 @@ import scipy.io.wavfile as wavfile
 import pickle
 import acoustics
 from chainer import cuda
-from . import preprocessing
+from . import processing
 from .reader import BucketsReader
+from .iterator import TrainingBatchIterator, DevelopmentBatchIterator
 from .. import fft
 from ..utils import stdout, printb
 from ..vocab import convert_sentence_to_unigram_tokens
-
-def get_bucket_index(signal, sampling_rate=16000, split_sec=0.5):
-	divider = sampling_rate * split_sec
-	return int(len(signal) // divider)
 
 class AugmentationOption():
 	def __init__(self):
@@ -33,148 +30,100 @@ class AugmentationOption():
 			return True
 		return False
 
-class TestMinibatchIterator(object):
-	def __init__(self, wav_dir, trn_dir, cache_dir, batchsizes, id_blank, buckets_limit=None, option=None, gpu=True):
-		self.option = None
+class Dataset():
+	def __init__(self, data_path, batchsizes, buckets_limit=None, buckets_cache_size=200, token_ids=None, dev_split=0.01, seed=0, 
+		id_blank=0, apply_cmn=False, global_normalization=True):
+		assert token_ids is not None
+		assert isinstance(token_ids, dict)
+
+		self.data_path = data_path
+		self.id_blank = 0
+		self.token_ids = token_ids
 		self.batchsizes = batchsizes
-		self.gpu = gpu
-		self.bucket_idx = 0
-		self.pos = 0
-		self.id_blank = id_blank
-		self.buckets_signal, self.buckets_sentence = load_test_buckets(wav_dir, trn_dir, buckets_limit)
+		self.apply_cmn = apply_cmn
+		self.global_normalization = global_normalization
 
-		assert len(self.buckets_signal) > 0
-		assert len(self.buckets_sentence) > 0
+		self.reader = BucketsReader(data_path, buckets_limit, buckets_cache_size, buckets_cache_size, dev_split, seed)
 
-		mean_filename = os.path.join(cache_dir, "mean.npy")
-		std_filename = os.path.join(cache_dir, "std.npy")
+		mean_filename = os.path.join(data_path, "mean.npy")
+		std_filename = os.path.join(data_path, "std.npy")
 
 		try:
-			if os.path.isfile(mean_filename) == False:
-				raise Exception()
-			if os.path.isfile(std_filename) == False:
-				raise Exception()
+			if global_normalization:
+				if os.path.isfile(mean_filename) == False:
+					raise Exception()
+				if os.path.isfile(std_filename) == False:
+					raise Exception()
 		except:
 			raise Exception("Run preprocess/buckets.py before starting training.")
 
 		self.mean = np.load(mean_filename)[None, ...].astype(np.float32)
 		self.std = np.load(std_filename)[None, ...].astype(np.float32)
 
-	def reset(self):
-		self.bucket_idx = 0
-		self.pos = 0
+		config = chainer.config
+		self.fbank = fft.get_filterbanks(nfft=config.num_fft, nfilt=config.num_mel_filters, samplerate=config.sampling_rate)
 
-	def __iter__(self):
-		return self
+	def get_iterator_train(self, batchsizes, option=None, gpu=True):
+		return TrainingBatchIterator(self, batchsizes, option, self.id_blank, gpu)
 
-	def __next__(self):
-		bucket_idx = self.bucket_idx
+	def get_iterator_dev(self, batchsizes, option=None, gpu=True):
+		return DevelopmentBatchIterator(self, batchsizes, option, self.id_blank, gpu)
 
-		if bucket_idx >= len(self.buckets_signal):
-			raise StopIteration()
+	def get_total_training_iterations(self):
+		return self.reader.compute_total_training_iterations_with_batchsizes(self.batchsizes)
 
-		num_data = len(self.buckets_signal[bucket_idx])
-		while num_data == 0:
-			bucket_idx += 1
-			if bucket_idx >= len(self.buckets_signal):
-				raise StopIteration()
-			num_data = len(self.buckets_signal[bucket_idx])
+	def get_signals_by_bucket_and_group(self, bucket_idx, group_idx):
+		num_data = self.buckets_num_data[bucket_idx][group_idx]
+		signal_list = self.buckets_signal[bucket_idx][group_idx]
+		if signal_list is None:
+			with open(os.path.join(self.data_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
+				signal_list = pickle.load(f)
+				self.buckets_signal[bucket_idx][group_idx] = signal_list
 
-		batchsize = self.batchsizes[bucket_idx]
-		batchsize = num_data - self.pos if batchsize > num_data - self.pos else batchsize
-		indices = np.arange(self.pos, self.pos + batchsize)
-		assert len(indices) > 0
+		# 一定以上はメモリ解放
+		if self.num_signals_memory > 0:
+			self.cached_indices.append((bucket_idx, group_idx))
+			if len(self.cached_indices) > self.num_signals_memory:
+				_bucket_idx, _group_idx = self.cached_indices.pop(0)
+				self.buckets_signal[_bucket_idx][_group_idx] = None
+				self.buckets_sentence[bucket_idx][group_idx] = None
 
-		extracted_features, sentences, max_feature_length, max_sentence_length = extract_features_by_indices(indices, self.buckets_signal[bucket_idx], self.buckets_sentence[bucket_idx], option=self.option, apply_cmn=self.apply_cmn)
-		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu=self.gpu)
+		return signal_list
 
-		self.pos += batchsize
-		if self.pos >= num_data:
-			self.pos = 0
-			self.bucket_idx += 1
+	def get_sentences_by_bucket_and_group(self, bucket_idx, group_idx):
+		num_data = self.buckets_num_data[bucket_idx][group_idx]
+		sentence_list = self.buckets_sentence[bucket_idx][group_idx]
+		if sentence_list is None:
+			with open (os.path.join(self.data_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
+				sentence_list = pickle.load(f)
+				self.buckets_sentence[bucket_idx][group_idx] = sentence_list
+		return sentence_list
 
-		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, self.pos / num_data
+	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
+		return processing.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu)
 
-	next = __next__  # Python 2
+	def extract_batch_features(self, batch, augmentation=None):
+		return processing.extract_batch_features(batch, augmentation, self.apply_cmn, self.fbank)
 
-
-class DevelopmentMinibatchIterator(object):
-	def __init__(self, dataset, batchsizes, option=None, id_blank=0, gpu=True):
-		self.dataset = dataset
-		self.batchsizes = batchsizes
-		self.option = None
-		self.gpu = gpu
-		self.bucket_idx = 0
-		self.group_idx = 0
-		self.pos = 0
-		self.id_blank = 0
-
-	def __iter__(self):
-		return self
-
-	def __next__(self):
-		bucket_idx = self.bucket_idx
-		group_idx = self.group_idx
-		buckets_indices = self.dataset.buckets_indices_dev
-
-		if bucket_idx >= len(buckets_indices):
-			raise StopIteration()
-
-		signal_list = self.dataset.get_signals_by_bucket_and_group(bucket_idx, group_idx)
-		sentence_list = self.dataset.get_sentences_by_bucket_and_group(bucket_idx, group_idx)
-				
-		indices_dev = buckets_indices[bucket_idx][group_idx]
-
-		batchsize = self.batchsizes[bucket_idx]
-		batchsize = len(indices_dev) - self.pos if batchsize > len(indices_dev) - self.pos else batchsize
-		indices = indices_dev[self.pos:self.pos + batchsize]
-		if len(indices) == 0:
-			import pdb; pdb.set_trace()
-		assert len(indices) > 0
-
-		extracted_features, sentences, max_feature_length, max_sentence_length = self.dataset.extract_features_by_indices(indices, signal_list, sentence_list, option=self.option)
-		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.dataset.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=self.gpu)
-
-		self.pos += batchsize
-		if self.pos >= len(indices_dev):
-			self.group_idx += 1
-			self.pos = 0
-
-		if self.group_idx >= len(buckets_indices[bucket_idx]):
-			self.group_idx = 0
-			self.bucket_idx += 1
+	def sample_minibatch(self, augmentation=None, gpu=True):
+		batch = self.reader.sample_minibatch(self.batchsizes)
+		audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=augmentation)
+		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.features_to_minibatch(audio_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
 
 		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx
 
-	next = __next__  # Python 2
-		
-class TrainingMinibatchIterator(object):
-	def __init__(self, dataset, batchsizes, option=None, id_blank=0, gpu=True):
-		self.dataset = dataset
-		self.batchsizes = batchsizes
-		self.option = None
-		self.gpu = gpu
-		self.id_blank = 0
-		self.loop_count = 0
-		self.total_loop = dataset.get_total_training_iterations()
+	def dump_num_updates(self):
+		self.reader.dump_num_updates()
 
-	def __iter__(self):
-		return self
+	def dump_information(self):
+		self.reader.dump_information()
 
-	def __next__(self):
-		if self.loop_count >= self.total_loop:
-			raise StopIteration()
-		self.loop_count += 1
-		return dataset.get_minibatch(self.option, self.gpu)
-
-	next = __next__  # Python 2
-
-class Dataset(object):
-	def __init__(self, data_path, batchsizes, buckets_limit=None, num_signals_per_file=1000, num_buckets_to_store_memory=200, 
+class _Dataset():
+	def __init__(self, data_path, batchsizes, buckets_limit=None, num_signals_per_file=1000, buckets_cache_size=200, 
 		token_ids=None, dev_split=0.01, seed=0, id_blank=0, apply_cmn=False, global_normalization=True):
 		assert token_ids is not None
 		self.num_signals_per_file = num_signals_per_file
-		self.num_signals_memory = num_buckets_to_store_memory
+		self.num_signals_memory = buckets_cache_size
 		self.dev_split = dev_split
 		self.data_path = data_path
 		self.buckets_limit = buckets_limit
@@ -279,10 +228,10 @@ class Dataset(object):
 		self.fbank = fft.get_filterbanks(nfft=config.num_fft, nfilt=config.num_mel_filters, samplerate=config.sampling_rate)
 
 	def get_iterator_train(self, batchsizes, option=None, gpu=True):
-		return TrainingMinibatchIterator(self, batchsizes, option, self.id_blank, gpu)
+		return TrainingBatchIterator(self, batchsizes, option, self.id_blank, gpu)
 
 	def get_iterator_dev(self, batchsizes, option=None, gpu=True):
-		return DevelopmentMinibatchIterator(self, batchsizes, option, self.id_blank, gpu)
+		return DevelopmentBatchIterator(self, batchsizes, option, self.id_blank, gpu)
 
 	def get_total_training_iterations(self):
 		num_buckets = len(self.buckets_signal)
