@@ -1,7 +1,7 @@
 import sys
 import numpy as np
-from util import printb, printr, stdout
-from vocab import convert_sentence_to_unigram_ids
+from .utils import printb, printr, stdout
+from .vocab import convert_sentence_to_unigram_ids
 
 def compute_character_error_rate(r, h):
 	if len(r) == 0:

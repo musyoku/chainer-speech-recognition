@@ -7,9 +7,9 @@ import chainer.functions as F
 import chainer.links as L
 from six.moves import xrange
 from chainer import Chain, serializers, initializers, variable, functions
-sys.path.append("../../")
-from stream.stream import Stream
-import stream.stream as nn
+sys.path.append(os.path.join("..", "..", ".."))
+from asr.stream import Stream
+import asr.stream as nn
 
 def save_model(dirname, model):
 	model_filename = dirname + "/model.hdf5"

@@ -6,267 +6,17 @@ import chainer
 import numpy as np
 import scipy.io.wavfile as wavfile
 import pickle
-import config
 import acoustics
-import fft
 from chainer import cuda
-from util import stdout, printb
-from vocab import convert_sentence_to_unigram_tokens
+from . import preprocessing
+from .reader import BucketsReader
+from .. import fft
+from ..utils import stdout, printb
+from ..vocab import convert_sentence_to_unigram_tokens
 
 def get_bucket_index(signal, sampling_rate=16000, split_sec=0.5):
 	divider = sampling_rate * split_sec
 	return int(len(signal) // divider)
-
-def load_test_buckets(wav_dir, trn_dir, buckets_limit=None):
-	config = chainer.config
-	buckets_signal = []
-	buckets_sentence = []
-	vocab = get_vocab()[0]
-	total_min = 0
-
-	def append_bucket(buckets, bucket_idx, data):
-		if len(buckets) <= bucket_idx:
-			while len(buckets) <= bucket_idx:
-				buckets.append([])
-		buckets[bucket_idx].append(data)
-
-	def add_to_bukcet(signal, sentence):
-		bucket_idx = get_bucket_index(signal, config.sampling_rate, config.bucket_split_sec)
-		if buckets_limit and bucket_idx >= buckets_limit:
-			return bucket_idx
-		append_bucket(buckets_signal, bucket_idx, signal)
-		append_bucket(buckets_sentence, bucket_idx, sentence)
-		return bucket_idx
-
-	wav_fs = os.listdir(wav_dir)
-	trn_fs = os.listdir(trn_dir)
-	wav_ids = set()
-	trn_ids = set()
-	for filename in wav_fs:
-		data_id = re.sub(r"\..+$", "", filename)
-		wav_ids.add(data_id)
-	for filename in trn_fs:
-		data_id = re.sub(r"\..+$", "", filename)
-		trn_ids.add(data_id)
-
-	for data_idx, wav_id in enumerate(wav_ids):
-		if wav_id not in trn_ids:
-			sys.stdout.write("\r")
-			sys.stdout.write(stdout.CLEAR)
-			print("%s.trn not found" % wav_id)
-			continue
-
-		wav_filename = "%s.wav" % wav_id
-		trn_filename = "%s.trn" % wav_id
-
-		# wavの読み込み
-		try:
-			sampling_rate, audio = wavfile.read(os.path.join(wav_dir, wav_filename))
-		except KeyboardInterrupt:
-			exit()
-		except Exception as e:
-			sys.stdout.write("\r")
-			sys.stdout.write(stdout.CLEAR)
-			print("Failed to read {} ({})".format(wav_filename, str(e)))
-			continue
-
-		duration = audio.size / sampling_rate / 60
-		total_min += duration
-
-		sys.stdout.write("\r")
-		sys.stdout.write(stdout.CLEAR)
-		sys.stdout.write("Loading {} ({}/{}) ... shape={}, rate={}, min={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(duration)))
-		sys.stdout.flush()
-
-		# 転記の読み込みと音声の切り出し
-		batch = generate_signal_transcription_pairs(os.path.join(trn_dir, trn_filename), audio, sampling_rate, vocab)
-
-		# 信号長と転記文字列長の不自然な部分を検出
-		num_points_per_character = 0	# 1文字あたりの信号の数
-		for signal, sentence in batch:
-			num_points_per_character += len(signal) / len(sentence)
-		num_points_per_character /= len(signal)
-
-		accept_rate = 0.7	# ズレの割合がこれ以下なら教師データに誤りが含まれている可能性があるので目視で確認すべき
-
-		for idx, (signal, sentence) in enumerate(batch):
-			error = abs(len(signal) - num_points_per_character * len(sentence))
-			rate = error / len(signal)
-			if rate < accept_rate:
-				raise Exception(len(signal), len(sentence), num_points_per_character, rate, trn_filename, idx + 1)
-			
-			add_to_bukcet(signal, sentence)
-
-	sys.stdout.write("\r")
-	sys.stdout.write(stdout.CLEAR)
-	printb("bucket	#data	sec")
-	total = 0
-	for bucket_idx, signals in enumerate(buckets_signal):
-		if buckets_limit and bucket_idx >= buckets_limit:
-			break
-		num_data = len(signals)
-		total += num_data
-		print("{}	{:>4}	{:>6.3f}".format(bucket_idx + 1, num_data, config.bucket_split_sec * (bucket_idx + 1)))
-	print("total	{:>4}		{} hour".format(total, int(total_min / 60)))
-
-	return buckets_signal, buckets_sentence
-
-def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
-	batch = []
-	with codecs.open(trn_path, "r", "utf-8") as f:
-		for data in f:
-			period_str, channel, sentence = data.split(":")
-			sentence = sentence.strip()
-			period = period_str.split("-")
-			start_sec, end_sec = float(period[0]), float(period[1])
-			start_frame = int(start_sec * sampling_rate)
-			end_frame = int(end_sec * sampling_rate)
-
-			assert start_frame <= len(audio)
-			assert end_frame <= len(audio)
-
-			signal = audio[start_frame:end_frame]
-
-			assert len(signal) == end_frame - start_frame
-			if len(signal) < config.num_fft * 3:
-				print("\r{}{} skipped. (length={})".format(stdout.CLEAR, sentence, len(signal)))
-				continue
-
-			# channelに従って選択
-			if signal.ndim == 2:
-				if channel == "S":	# 両方に含まれる場合はL
-					signal = signal[:, 0]
-				elif channel == "L":
-					signal = signal[:, 0]
-				elif channel == "R":
-					signal = signal[:, 1]
-				else:
-					raise Exception()
-
-			batch.append((signal, sentence))
-	return batch
-
-def extract_features_by_indices(indices, signal_list, sentence_list, option=None, apply_cmn=False, fbank=None):
-	config = chainer.config
-	max_feature_length = 0
-	max_sentence_length = 0
-	extracted_features = []
-	sentences = []
-
-	for data_idx in indices:
-		signal = signal_list[data_idx]
-		sentence = sentence_list[data_idx]
-
-		# データ拡大
-		if option and option.add_noise:
-			gain = max(min(np.random.normal(200, 100), 500), 0)
-			noise = acoustics.generator.noise(len(signal), color="white") * gain
-			signal += noise.astype(np.int16)
-
-		specgram = fft.get_specgram(signal, config.sampling_rate, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, winfunc=config.window_func)
-		
-		# データ拡大
-		if option and option.using_augmentation():
-			specgram = fft.augment_specgram(specgram, option.change_speech_rate, option.change_vocal_tract)
-
-		# CMN 
-		if apply_cmn:
-			log_specgram = np.log(specgram)
-			specgram = np.exp(np.log(specgram) - np.mean(log_specgram, axis=0))
-
-		logmel = fft.compute_logmel(specgram, config.sampling_rate, fbank=fbank, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, nfilt=config.num_mel_filters, winfunc=config.window_func)
-		logmel, delta, delta_delta = fft.compute_deltas(logmel)
-
-		logmel = logmel.T
-		delta = delta.T
-		delta_delta = delta_delta.T
-
-		if logmel.shape[1] > max_feature_length:
-			max_feature_length = logmel.shape[1]
-		if len(sentence) > max_sentence_length:
-			max_sentence_length = len(sentence)
-
-		if logmel.shape[1] == 0:
-			continue
-
-		extracted_features.append((logmel, delta, delta_delta))
-		sentences.append(sentence)
-
-	assert max_feature_length > 0
-	return extracted_features, sentences, max_feature_length, max_sentence_length
-
-def features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, token_ids, id_blank, x_mean, x_std, gpu=True):
-	assert isinstance(token_ids, dict)
-	assert isinstance(id_blank, int)
-	config = chainer.config
-	batchsize = len(features)
-	channels = 1
-	if config.using_delta:
-		channels += 1
-	if config.using_delta_delta:
-		channels += 1
-	height = config.num_mel_filters
-
-	x_batch = np.zeros((batchsize, channels, height, max_feature_length), dtype=np.float32)
-	t_batch = np.full((batchsize, max_sentence_length), id_blank, dtype=np.int32)
-	bigram_batch = np.full((batchsize, max_sentence_length), id_blank, dtype=np.int32)
-	x_length_batch = []
-	t_length_batch = []
-
-	for batch_idx, ((logmel, delta, delta_delta), sentence) in enumerate(zip(features, sentences)):
-		# 書き起こしをunigram単位に分割
-		unigram_tokens = convert_sentence_to_unigram_tokens(sentence)
-		bigram_tokens = []
-		if len(unigram_tokens) > 1:
-			for first, second in zip(unigram_tokens[:-1], unigram_tokens[1:]):
-				bigram_tokens.append(first + second)
-
-		unigram_ids = []
-		bigram_ids = [-1]
-		for token in unigram_tokens:
-			unigram_ids.append(token_ids[token])
-		for token in bigram_tokens:
-			if token in token_ids:
-				bigram_ids.append(token_ids[token])
-			else:
-				bigram_ids.append(-1)
-		assert len(unigram_ids) == len(bigram_ids)
-
-		x_length = logmel.shape[1]
-		t_length = len(unigram_ids)
-
-		x_batch[batch_idx, 0, :, :x_length] = logmel
-		if config.using_delta:
-			x_batch[batch_idx, 1, :, :x_length] = delta
-		if config.using_delta_delta:
-			x_batch[batch_idx, 2, :, :x_length] = delta_delta
-		x_length_batch.append(x_length)
-
-		# CTCが適用可能かチェック
-		num_trans_same_label = np.count_nonzero(unigram_ids == np.roll(unigram_ids, 1))
-		required_length = t_length * 2 + 1 + num_trans_same_label
-		if x_length < required_length:
-			possibole_t_length = (x_length - num_trans_same_label - 1) // 2
-			unigram_ids = unigram_ids[:possibole_t_length]
-			bigram_ids = bigram_ids[:possibole_t_length]
-			t_length = len(unigram_ids)
-
-		# t
-		t_batch[batch_idx, :t_length] = unigram_ids
-		bigram_batch[batch_idx, :t_length] = bigram_ids
-		t_length_batch.append(t_length)
-
-	x_batch = (x_batch - x_mean) / x_std
-
-	# GPU
-	if gpu:
-		x_batch = cuda.to_gpu(x_batch.astype(np.float32))
-		t_batch = cuda.to_gpu(t_batch.astype(np.int32))
-		bigram_batch = cuda.to_gpu(bigram_batch.astype(np.int32))
-		x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
-		t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
-
-	return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch
 
 class AugmentationOption():
 	def __init__(self):
@@ -305,7 +55,7 @@ class TestMinibatchIterator(object):
 			if os.path.isfile(std_filename) == False:
 				raise Exception()
 		except:
-			raise Exception("Run dataset.py before starting training.")
+			raise Exception("Run preprocess/buckets.py before starting training.")
 
 		self.mean = np.load(mean_filename)[None, ...].astype(np.float32)
 		self.std = np.load(std_filename)[None, ...].astype(np.float32)
@@ -455,7 +205,7 @@ class Dataset(object):
 				if os.path.isfile(std_filename) == False:
 					raise Exception()
 		except:
-			raise Exception("Run dataset.py before starting training.")
+			raise Exception("Run preprocess/buckets.py before starting training.")
 
 		self.mean = np.load(mean_filename)[None, ...].astype(np.float32)
 		self.std = np.load(std_filename)[None, ...].astype(np.float32)

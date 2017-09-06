@@ -8,14 +8,12 @@ import numpy as np
 import chainer.functions as F
 from chainer import cuda, serializers
 from multiprocessing import Process, Queue
-sys.path.append(os.path.join("..", ".."))
-import config
-from error import compute_minibatch_error
-from dataset import Dataset, AugmentationOption
 from model import load_model, save_model, build_model, save_params
-from util import stdout, printb, printr
-from optim import get_current_learning_rate, decay_learning_rate, get_optimizer
-from vocab import get_unigram_ids, ID_BLANK
+from asr.error import compute_minibatch_error
+from asr.dataset import Dataset, AugmentationOption
+from asr.utils import stdout, printb, printr
+from asr.optimizer import get_current_learning_rate, decay_learning_rate, get_optimizer
+from asr.vocab import get_unigram_ids, ID_BLANK
 
 def formatted_error(error_values):
 	errors = []
@@ -35,6 +33,30 @@ def main():
 	vocab_token_ids, vocab_id_tokens = get_unigram_ids()
 	vocab_size = len(vocab_token_ids)
 
+	# 設定
+	sampling_rate = 16000
+	frame_width = 0.032
+	config = chainer.global_config
+	config.sampling_rate = sampling_rate
+	config.frame_width = frame_width
+	config.frame_shift = 0.01
+	config.num_fft = int(sampling_rate * frame_width)
+	config.num_mel_filters = 40
+	config.window_func = lambda x:np.hanning(x)
+	config.using_delta = True
+	config.using_delta_delta = True
+	config.bucket_split_sec = 0.5
+	config.vocab_size = vocab_size
+	config.ndim_audio_features = args.ndim_audio_features
+	config.ndim_h = args.ndim_h
+	config.ndim_dense = args.ndim_dense
+	config.num_conv_layers = args.num_conv_layers
+	config.kernel_size = (3, 5)
+	config.dropout = args.dropout
+	config.weightnorm = args.weightnorm
+	config.wgain = args.wgain
+	config.architecture = args.architecture
+
 	# バケツごとのミニバッチサイズ
 	# GTX 1080 1台基準
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
@@ -51,16 +73,6 @@ def main():
 		augmentation.add_noise = True
 
 	# モデル
-	chainer.global_config.vocab_size = vocab_size
-	chainer.global_config.ndim_audio_features = args.ndim_audio_features
-	chainer.global_config.ndim_h = args.ndim_h
-	chainer.global_config.ndim_dense = args.ndim_dense
-	chainer.global_config.num_conv_layers = args.num_conv_layers
-	chainer.global_config.kernel_size = (3, 5)
-	chainer.global_config.dropout = args.dropout
-	chainer.global_config.weightnorm = args.weightnorm
-	chainer.global_config.wgain = args.wgain
-	chainer.global_config.architecture = args.architecture
 	save_params(args.model_dir)
 
 	model = load_model(args.model_dir)
