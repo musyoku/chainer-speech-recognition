@@ -12,10 +12,10 @@ from . import processing
 from .reader import BucketsReader
 from .iterator import TrainingBatchIterator, DevelopmentBatchIterator
 from .. import fft
-from ..utils import stdout, printb
+from ..utils import stdout, printb, Object
 from ..vocab import convert_sentence_to_unigram_tokens
 
-class AugmentationOption(object):
+class AugmentationOption(Object):
 	def __init__(self):
 		self.change_vocal_tract = False
 		self.change_speech_rate = False

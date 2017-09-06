@@ -1,5 +1,8 @@
 import sys
 
+class Object(object):
+	pass
+
 class stdout:
 	BOLD = "\033[1m"
 	END = "\033[0m"

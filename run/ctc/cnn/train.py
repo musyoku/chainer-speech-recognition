@@ -31,6 +31,14 @@ def preloading_loop(dataset, augmentation, num_load, queue):
 
 def main():
 	assert args.dataset_path is not None
+	assert args.working_directory is not None
+
+	# ワーキングディレクトリ
+	try:
+		os.mkdir(args.working_directory)
+	except:
+		pass
+
 	# データの読み込み
 	vocab_token_ids, vocab_id_tokens = get_unigram_ids()
 	vocab_size = len(vocab_token_ids)
@@ -76,7 +84,7 @@ def main():
 	save_config(os.path.join(args.working_directory, "config.json"), config)
 
 	# モデル
-	model = load_model(args.model_dir)
+	model = load_model(os.path.join(args.working_directory, "model.hdf5"), config)
 	if model is None:
 		config = chainer.config
 		model = build_model(vocab_size=vocab_size, ndim_audio_features=config.ndim_audio_features, 
@@ -99,10 +107,10 @@ def main():
 		printr("")
 		print("new learning rate: {}".format(get_learning_rate(optimizer)))
 
-	env = Environment(signal_handler)
+	env = Environment(os.path.join(args.working_directory, "training.env"), signal_handler)
 	env.learning_rate = args.learning_rate
 	env.augmentation = augmentation
-	env.save(os.path.join(args.working_directory, "training.env"))
+	env.save()
 	pid = os.getpid()
 	printb("Run 'kill -USR1 {}' to update training environment.".format(pid))
 

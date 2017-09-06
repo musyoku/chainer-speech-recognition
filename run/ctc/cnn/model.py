@@ -11,28 +11,14 @@ sys.path.append(os.path.join("..", "..", ".."))
 from asr.stream import Stream
 import asr.stream as nn
 
-def save_model(dirname, model):
-	model_filename = dirname + "/model.hdf5"
+def save_model(filename, model):
+	if os.path.isfile(filename):
+		os.remove(filename)
+	serializers.save_hdf5(filename, model)
 
-	try:
-		os.mkdir(dirname)
-	except:
-		pass
-
-	if os.path.isfile(model_filename):
-		os.remove(model_filename)
-	serializers.save_hdf5(model_filename, model)
-
-def save_config(dirname, config, overwrite=False):
-	param_filename = dirname + "/params.json"
-
-	if os.path.isfile(param_filename) and overwrite is False:
+def save_config(filename, config, overwrite=False):
+	if os.path.isfile(filename) and overwrite is False:
 		return
-		
-	try:
-		os.mkdir(dirname)
-	except:
-		pass
 
 	params = {
 		"vocab_size": config.vocab_size,
@@ -46,27 +32,30 @@ def save_config(dirname, config, overwrite=False):
 		"num_conv_layers": config.num_conv_layers,
 		"wgain": config.wgain,
 	}
-	with open(param_filename, "w") as f:
+	with open(filename, "w") as f:
 		json.dump(params, f, indent=4, sort_keys=True, separators=(',', ': '))
 
-def load_model(dirname):
-	model_filename = dirname + "/model.hdf5"
-	param_filename = dirname + "/params.json"
-
-	if os.path.isfile(param_filename):
-		print("loading {} ...".format(param_filename))
-		with open(param_filename, "r") as f:
+def load_config(filename):
+	if os.path.isfile(filename):
+		print("loading {} ...".format(filename))
+		with open(filename, "r") as f:
 			try:
 				params = json.load(f)
 			except Exception as e:
-				raise Exception("could not load {}".format(param_filename))
+				raise Exception("could not load {}".format(filename))
 
-		model = build_model(**params)
+		return params
+	else:
+		return None
 
-		if os.path.isfile(model_filename):
-			print("loading {} ...".format(model_filename))
-			serializers.load_hdf5(model_filename, model)
+def load_model(filename, config):
+	if os.path.isfile(filename):
+		model = build_model(**config)
 
+		if os.path.isfile(filename):
+			print("loading {} ...".format(filename))
+			serializers.load_hdf5(filename, model)
+			
 		return model
 	else:
 		return None

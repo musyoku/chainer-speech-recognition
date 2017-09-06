@@ -1,6 +1,21 @@
-import os, signal
+import os, signal, json
+from ..utils import Object
 
-class Environment():
+def _to_dict(obj):
+	d = {}
+	for key in dir(obj):
+		if key.startswith("_") is False:
+			attr = getattr(obj, key)
+			print(type(attr))
+			if isinstance(attr, Object):
+				d[key] = _to_dict(attr)
+			elif callable(attr):
+				pass
+			else:
+				d[key] = attr
+	return d
+
+class Environment(Object):
 	def __init__(self, filename, handler):
 		self._filename = filename
 		self._handler = handler
@@ -10,17 +25,14 @@ class Environment():
 		self.load(self._filename)
 		self._handler()
 
-	def save():
-		env = {}
+	def save(self):
+		env = _to_dict(self)
 
-		for key in dir(self):
-			if key.startswith("_") is False:
-				setattr(env, key, getattr(self, key))
-
+		print(env)
 		with open(self._filename, "w") as f:
 			json.dump(env, f, indent=4, sort_keys=True, separators=(',', ': '))
 
-	def load():
+	def load(self):
 		env = None
 		if os.path.isfile(self._filename):
 			with open(self._filename, "r") as f:
