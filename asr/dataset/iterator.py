@@ -65,10 +65,10 @@ class TestBatchIterator():
 	next = __next__  # Python 2
 
 class DevelopmentBatchIterator():
-	def __init__(self, dataset, batchsizes, option=None, id_blank=0, gpu=True):
+	def __init__(self, dataset, batchsizes, augmentation=None, id_blank=0, gpu=True):
 		self.dataset = dataset
 		self.batchsizes = batchsizes
-		self.option = None
+		self.augmentation = None
 		self.gpu = gpu
 		self.bucket_idx = 0
 		self.group_idx = 0
@@ -81,25 +81,34 @@ class DevelopmentBatchIterator():
 	def __next__(self):
 		bucket_idx = self.bucket_idx
 		group_idx = self.group_idx
-		buckets_indices = self.dataset.buckets_indices_dev
+		buckets_indices = self.dataset.reader.buckets_indices_dev
 
 		if bucket_idx >= len(buckets_indices):
 			raise StopIteration()
 
-		signal_list = self.dataset.get_signals_by_bucket_and_group(bucket_idx, group_idx)
-		sentence_list = self.dataset.get_sentences_by_bucket_and_group(bucket_idx, group_idx)
+		signal_list = self.dataset.reader.get_signals_by_bucket_and_group(bucket_idx, group_idx)
+		sentence_list = self.dataset.reader.get_sentences_by_bucket_and_group(bucket_idx, group_idx)
 				
 		indices_dev = buckets_indices[bucket_idx][group_idx]
 
 		batchsize = self.batchsizes[bucket_idx]
 		batchsize = len(indices_dev) - self.pos if batchsize > len(indices_dev) - self.pos else batchsize
 		indices = indices_dev[self.pos:self.pos + batchsize]
+
 		if len(indices) == 0:
-			import pdb; pdb.set_trace()
+			import pdb
+			pdb.set_trace()
+
 		assert len(indices) > 0
 
-		extracted_features, sentences, max_feature_length, max_sentence_length = self.dataset.extract_features_by_indices(indices, signal_list, sentence_list, option=self.option)
-		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.dataset.features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, gpu=self.gpu)
+		batch = []
+		for data_idx in indices:
+			signal = signal_list[data_idx]
+			sentence = sentence_list[data_idx]
+			batch.append((signal, sentence))
+
+		audio_features, sentences, max_feature_length, max_sentence_length = self.dataset.extract_batch_features(batch, augmentation=self.augmentation)
+		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.dataset.features_to_minibatch(audio_features, sentences, max_feature_length, max_sentence_length, gpu=self.gpu)
 
 		self.pos += batchsize
 		if self.pos >= len(indices_dev):
@@ -115,10 +124,10 @@ class DevelopmentBatchIterator():
 	next = __next__  # Python 2
 		
 class TrainingBatchIterator():
-	def __init__(self, dataset, batchsizes, option=None, id_blank=0, gpu=True):
+	def __init__(self, dataset, batchsizes, augmentation=None, id_blank=0, gpu=True):
 		self.dataset = dataset
 		self.batchsizes = batchsizes
-		self.option = None
+		self.augmentation = None
 		self.gpu = gpu
 		self.id_blank = 0
 		self.loop_count = 0
@@ -131,7 +140,7 @@ class TrainingBatchIterator():
 		if self.loop_count >= self.total_loop:
 			raise StopIteration()
 		self.loop_count += 1
-		return self.dataset.sample_minibatch(self.option, self.gpu)
+		return self.dataset.sample_minibatch(self.augmentation, self.gpu)
 
 	next = __next__  # Python 2
 

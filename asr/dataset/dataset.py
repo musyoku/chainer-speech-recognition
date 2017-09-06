@@ -72,33 +72,6 @@ class Dataset():
 	def get_total_training_iterations(self):
 		return self.reader.calculate_total_training_iterations_with_batchsizes(self.batchsizes)
 
-	def get_signals_by_bucket_and_group(self, bucket_idx, group_idx):
-		num_data = self.buckets_num_data[bucket_idx][group_idx]
-		signal_list = self.buckets_signal[bucket_idx][group_idx]
-		if signal_list is None:
-			with open(os.path.join(self.data_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
-				signal_list = pickle.load(f)
-				self.buckets_signal[bucket_idx][group_idx] = signal_list
-
-		# 一定以上はメモリ解放
-		if self.num_signals_memory > 0:
-			self.cached_indices.append((bucket_idx, group_idx))
-			if len(self.cached_indices) > self.num_signals_memory:
-				_bucket_idx, _group_idx = self.cached_indices.pop(0)
-				self.buckets_signal[_bucket_idx][_group_idx] = None
-				self.buckets_sentence[bucket_idx][group_idx] = None
-
-		return signal_list
-
-	def get_sentences_by_bucket_and_group(self, bucket_idx, group_idx):
-		num_data = self.buckets_num_data[bucket_idx][group_idx]
-		sentence_list = self.buckets_sentence[bucket_idx][group_idx]
-		if sentence_list is None:
-			with open (os.path.join(self.data_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, group_idx, num_data)), "rb") as f:
-				sentence_list = pickle.load(f)
-				self.buckets_sentence[bucket_idx][group_idx] = sentence_list
-		return sentence_list
-
 	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
 		return processing.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu)
 
