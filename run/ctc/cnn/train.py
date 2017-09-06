@@ -73,7 +73,7 @@ def main():
 
 	dataset = Dataset(args.dataset_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
 		buckets_cache_size=200, apply_cmn=args.apply_cmn)
-	dataset.dump_information()
+	dataset.dump()
 
 	augmentation = AugmentationOption()
 	if args.augmentation:
@@ -107,15 +107,14 @@ def main():
 		printr("")
 		print("new learning rate: {}".format(get_learning_rate(optimizer)))
 
-	env = Environment(os.path.join(args.working_directory, "training.env"), signal_handler)
+	env = Environment(os.path.join(args.working_directory, "training.json"), signal_handler)
 	env.learning_rate = args.learning_rate
 	env.augmentation = augmentation
 	env.save()
+	env.dump()
+
 	pid = os.getpid()
 	printb("Run 'kill -USR1 {}' to update training environment.".format(pid))
-
-	env.load()
-	env.dump()
 
 	# optimizer
 	optimizer = get_optimizer(args.optimizer, env.learning_rate, args.momentum)

@@ -252,8 +252,8 @@ class BucketsReader():
 			print(buckets)
 			print(sum(buckets) / len(buckets))
 
-	def dump_information(self):
-		printb("bucket	#train	#dev	sec")
+	def dump(self):
+		printb("	bucket	#train	#dev	sec")
 		total_train = 0
 		total_dev = 0
 		config = chainer.config
@@ -268,8 +268,8 @@ class BucketsReader():
 			for indices_dev in indices_group_dev:
 				total_dev += len(indices_dev)
 				num_dev += len(indices_dev)
-			print("{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, num_train, num_dev, config.bucket_split_sec * (bucket_idx + 1)))
-		print("total	{:>6}	{:>4}".format(total_train, total_dev))
+			print("	{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, num_train, num_dev, config.bucket_split_sec * (bucket_idx + 1)))
+		print("	total	{:>6}	{:>4}".format(total_train, total_dev))
 
 	def calculate_total_training_iterations_with_batchsizes(self, batchsizes):
 		num_buckets = len(self.buckets_signal)

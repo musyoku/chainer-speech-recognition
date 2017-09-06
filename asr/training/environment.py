@@ -30,8 +30,6 @@ class Environment(Object):
 
 	def save(self):
 		env = to_dict(self)
-
-		print(env)
 		with open(self._filename, "w") as f:
 			json.dump(env, f, indent=4, sort_keys=True, separators=(',', ': '))
 
@@ -52,4 +50,4 @@ class Environment(Object):
 	def dump(self):
 		env = to_dict(self)
 		printb("[Environment]")
-		_dump(env, 0)
+		_dump(env, 1)
