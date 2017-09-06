@@ -152,7 +152,7 @@ def main():
 
 
 
-			batch_train.total_loop = 10
+			batch_train.total_itr = 10
 
 
 
@@ -211,11 +211,11 @@ def main():
 				except Exception as e:
 					printr("")
 					printc("{} (bucket {})".format(str(e), bucket_idx + 1), color="red")
-
+					
+			printr("")
 			avg_errors_dev = []
 			for errors in buckets_errors:
 				avg_errors_dev.append(sum(errors) / len(errors) * 100)
-
 
 			training_iterations.done({
 				"loss": sum_loss / batch_train.get_total_iterations(),
