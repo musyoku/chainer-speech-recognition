@@ -65,7 +65,7 @@ class TestBatchIterator():
 	next = __next__  # Python 2
 
 class DevelopmentBatchIterator():
-	def __init__(self, dataset, batchsizes, augmentation=None, id_blank=0, gpu=True):
+	def __init__(self, dataset, batchsizes, augmentation=None, gpu=True):
 		self.dataset = dataset
 		self.batchsizes = batchsizes
 		self.augmentation = None
@@ -73,7 +73,6 @@ class DevelopmentBatchIterator():
 		self.bucket_idx = 0
 		self.group_idx = 0
 		self.pos = 0
-		self.id_blank = 0
 
 	def __iter__(self):
 		return self
@@ -124,25 +123,27 @@ class DevelopmentBatchIterator():
 	next = __next__  # Python 2
 		
 class TrainingBatchIterator():
-	def __init__(self, dataset, batchsizes, augmentation=None, id_blank=0, gpu=True):
+	def __init__(self, dataset, batchsizes, augmentation=None, gpu=True):
 		self.dataset = dataset
 		self.batchsizes = batchsizes
 		self.augmentation = None
 		self.gpu = gpu
-		self.id_blank = 0
-		self.loop_count = 0
-		self.total_loop = dataset.get_total_training_iterations()
+		self.itr = 0
+		self.total_itr = dataset.get_total_training_iterations()
 
 	def __iter__(self):
 		return self
 
 	def __next__(self):
-		if self.loop_count >= self.total_loop:
+		if self.itr >= self.total_itr:
 			raise StopIteration()
-		self.loop_count += 1
+		self.itr += 1
 		return self.dataset.sample_minibatch(self.augmentation, self.gpu)
 
 	next = __next__  # Python 2
 
 	def console_log_progress(self):
-		printr("iteration {}/{}".format(self.loop_count, self.total_loop))
+		printr("iteration {}/{}".format(self.itr, self.total_itr))
+
+	def get_total_iterations(self):
+		return self.total_itr

@@ -115,6 +115,8 @@ def main():
 
 	env = Environment(env_filename, signal_handler)
 	env.learning_rate = args.learning_rate
+	env.final_learning_rate = args.final_learning_rate
+	env.lr_decay = args.lr_decay
 	env.augmentation = augmentation
 	env.save()
 
@@ -137,6 +139,7 @@ def main():
 	# 学習
 	printb("[Training]")
 	training_iterations = Iteration(args.epochs)
+
 	for epoch in training_iterations:
 		sum_loss = 0
 
@@ -213,110 +216,15 @@ def main():
 			for errors in buckets_errors:
 				avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-			print(avg_errors_dev)
 
+			training_iterations.done({
+				"loss": sum_loss / batch_train.get_total_iterations(),
+				"CER": formatted_error(avg_errors_dev),
+				"lr": get_learning_rate(optimizer)
+			})
 
-
-
-	for epoch in iteration:
-		loss_value = 0
-		sum_loss = 0
-		
-		with chainer.using_config("train", True):
-			current_iteration = 0
-
-			while total_iterations_train > current_iteration:
-
-				if args.multiprocessing:
-					minibatch_list = []
-					for _ in range(num_preloads):
-						minibatch_list.append(queue.get())
-
-					if preloading_process is not None:
-						preloading_process.join()
-
-					queue = Queue()
-					preloading_process = Process(target=preloading_loop, args=(dataset, augmentation, num_preloads, queue))
-					preloading_process.start()
-				else:
-					minibatch_list = [dataset.sample_minibatch(augmentation=augmentation, gpu=False)]
-
-				for batch_idx, data in enumerate(minibatch_list):
-					try:
-						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = data
-
-						# print(np.mean(x_batch, axis=3), np.var(x_batch, axis=3))
-
-						if args.gpu_device >= 0:
-							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
-							t_batch = cuda.to_gpu(t_batch.astype(np.int32))
-							x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
-							t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
-
-						# 誤差の計算
-						y_batch = model(x_batch)	# list of variables
-						loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
-
-						# NaN
-						loss_value = float(loss.data)
-						if loss_value != loss_value:
-							raise Exception("Encountered NaN when computing loss.")
-
-						# 更新
-						optimizer.update(lossfun=lambda: loss)
-
-					except Exception as e:
-						print(" ", bucket_idx, str(e))
-
-					sum_loss += loss_value
-					printr("iteration {}/{}".format(batch_idx + current_iteration + 1, total_iterations_train))
-
-				current_iteration += len(minibatch_list)
-
-		sys.stdout.write("\r" + stdout.CLEAR)
-		sys.stdout.flush()
-		save_model(args.model_dir, model)
-
-		# バリデーション
-		with chainer.using_config("train", False):
-			# ノイズ無しデータでバリデーション
-			iterator = dataset.get_iterator_dev(batchsizes, None, gpu=args.gpu_device >= 0)
-			buckets_errors = []
-			for batch in iterator:
-				try:
-					x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = batch
-
-					printr("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
-
-					y_batch = model(x_batch, split_into_variables=False)
-					y_batch = xp.argmax(y_batch.data, axis=2)
-					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
-
-					while bucket_idx >= len(buckets_errors):
-						buckets_errors.append([])
-
-					buckets_errors[bucket_idx].append(error)
-				except Exception as e:
-					print(" ", bucket_idx, str(e))
-
-			avg_errors_dev = []
-			for errors in buckets_errors:
-				avg_errors_dev.append(sum(errors) / len(errors) * 100)
-
-
-		sys.stdout.write(stdout.MOVE)
-		sys.stdout.write(stdout.LEFT)
-
-		# ログ
-		iteration.done()
-
-		sys.stdout.write(stdout.CLEAR)
-		print("	loss:", sum_loss / total_iterations_train)
-		print("	CER:	{}".format(formatted_error(avg_errors_dev)))
-		print("	lr: {}".format(get_learning_rate(optimizer)))
-
-		# 学習率の減衰
-		decay_learning_rate(optimizer, args.lr_decay, final_learning_rate)
+			# 学習率の減衰
+			decay_learning_rate(optimizer, env.lr_decay, env.final_learning_rate)
 
 if __name__ == "__main__":
 	main()

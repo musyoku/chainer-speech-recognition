@@ -64,10 +64,10 @@ class Dataset():
 		self.fbank = fft.get_filterbanks(nfft=config.num_fft, nfilt=config.num_mel_filters, samplerate=config.sampling_rate)
 
 	def get_training_batch_iterator(self, batchsizes, augmentation=None, gpu=True):
-		return TrainingBatchIterator(self, batchsizes, augmentation, self.id_blank, gpu)
+		return TrainingBatchIterator(self, batchsizes, augmentation, gpu)
 
 	def get_development_batch_iterator(self, batchsizes, augmentation=None, gpu=True):
-		return DevelopmentBatchIterator(self, batchsizes, augmentation, self.id_blank, gpu)
+		return DevelopmentBatchIterator(self, batchsizes, augmentation, gpu)
 
 	def get_total_training_iterations(self):
 		return self.reader.calculate_total_training_iterations_with_batchsizes(self.batchsizes)

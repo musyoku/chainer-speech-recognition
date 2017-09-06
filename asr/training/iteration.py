@@ -1,4 +1,4 @@
-import time
+import time, sys
 from ..utils import printb
 
 def _dump(d, depth):
@@ -41,5 +41,5 @@ class Iteration():
 	def done(self, d):
 		elapsed_time = time.time() - self.epoch_start_time
 		self.total_time += elapsed_time
-		print("Epoch {} done in {} min - total {} min".format(self.itr, int(elapsed_time / 60), int(self.total_time / 60)))
-		_dump(d, 0)
+		printb("Epoch {} done in {} min - total {} min".format(self.itr, int(elapsed_time / 60), int(self.total_time / 60)))
+		_dump(d, 1)
