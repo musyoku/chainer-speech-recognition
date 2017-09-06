@@ -1,6 +1,6 @@
 from chainer import optimizers
 
-def get_current_learning_rate(opt):
+def get_learning_rate(opt):
 	if isinstance(opt, optimizers.NesterovAG):
 		return opt.lr
 	if isinstance(opt, optimizers.MomentumSGD):
@@ -9,6 +9,17 @@ def get_current_learning_rate(opt):
 		return opt.lr
 	if isinstance(opt, optimizers.Adam):
 		return opt.alpha
+	raise NotImplementedError()
+
+def set_learning_rate(opt, lr):
+	if isinstance(opt, optimizers.NesterovAG):
+		opt.lr = lr
+	if isinstance(opt, optimizers.MomentumSGD):
+		opt.lr = lr
+	if isinstance(opt, optimizers.SGD):
+		opt.lr = lr
+	if isinstance(opt, optimizers.Adam):
+		opt.alpha = lr
 	raise NotImplementedError()
 
 def get_optimizer(name, lr, momentum):

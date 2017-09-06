@@ -15,7 +15,7 @@ from .. import fft
 from ..utils import stdout, printb
 from ..vocab import convert_sentence_to_unigram_tokens
 
-class AugmentationOption():
+class AugmentationOption(object):
 	def __init__(self):
 		self.change_vocal_tract = False
 		self.change_speech_rate = False

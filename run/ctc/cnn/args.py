@@ -25,7 +25,7 @@ parser.add_argument("--weightnorm", "-weightnorm", default=False, action="store_
 parser.add_argument("--architecture", "-arch", type=str, default="zhang")
 
 parser.add_argument("--gpu-device", "-g", type=int, default=0) 
-parser.add_argument("--model-dir", "-m", type=str, default="model")
+parser.add_argument("--working-directory", "-cwd", type=str, default=None)
 
 parser.add_argument("--buckets-limit", type=int, default=None)
 parser.add_argument("--dataset-path", "-data", type=str, default=None)

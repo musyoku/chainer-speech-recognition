@@ -13,7 +13,7 @@ from args import args
 from asr.error import compute_minibatch_error
 from asr.dataset import Dataset, AugmentationOption
 from asr.utils import stdout, printb, printr
-from asr.optimizer import get_current_learning_rate, decay_learning_rate, get_optimizer
+from asr.optimizers import get_current_learning_rate, decay_learning_rate, get_optimizer
 from asr.vocab import get_unigram_ids, ID_BLANK
 
 def formatted_error(error_values):

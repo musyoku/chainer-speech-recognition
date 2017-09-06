@@ -8,13 +8,14 @@ import numpy as np
 import chainer.functions as F
 from chainer import cuda, serializers
 from multiprocessing import Process, Queue
-from model import load_model, save_model, build_model, save_params
+from model import load_model, save_model, build_model, save_config
 from args import args
 from asr.error import compute_minibatch_error
 from asr.dataset import Dataset, AugmentationOption
 from asr.utils import stdout, printb, printr
-from asr.optimizer import get_current_learning_rate, decay_learning_rate, get_optimizer
+from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer
 from asr.vocab import get_unigram_ids, ID_BLANK
+from asr.training.environment import Environment
 
 def formatted_error(error_values):
 	errors = []
@@ -62,9 +63,8 @@ def main():
 	# GTX 1080 1台基準
 	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
 
-	cache_size = 0 if args.multiprocessing else 200	# マルチプロセスの場合キャッシュごとコピーされるのでメモリを圧迫する
 	dataset = Dataset(args.dataset_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
-		buckets_cache_size=cache_size, apply_cmn=args.apply_cmn)
+		buckets_cache_size=200, apply_cmn=args.apply_cmn)
 	dataset.dump_information()
 
 	augmentation = AugmentationOption()
@@ -73,9 +73,9 @@ def main():
 		augmentation.change_speech_rate = True
 		augmentation.add_noise = True
 
-	# モデル
-	save_params(args.model_dir)
+	save_config(os.path.join(args.working_directory, "config.json"), config)
 
+	# モデル
 	model = load_model(args.model_dir)
 	if model is None:
 		config = chainer.config
@@ -87,34 +87,34 @@ def main():
 	if args.gpu_device >= 0:
 		cuda.get_device(args.gpu_device).use()
 		model.to_gpu(args.gpu_device)
+
 	xp = model.xp
 
+	# 環境
+	def signal_handler():
+		set_learning_rate(optimizer, env.learning_rate)
+		augmentation.change_vocal_tract = env.augmentation.change_vocal_tract
+		augmentation.change_speech_rate = env.augmentation.change_speech_rate
+		augmentation.add_noise = env.augmentation.add_noise
+		printr("")
+		print("new learning rate: {}".format(get_learning_rate(optimizer)))
+
+	env = Environment(signal_handler)
+	env.learning_rate = args.learning_rate
+	env.augmentation = augmentation
+	env.save(os.path.join(args.working_directory, "training.env"))
+	pid = os.getpid()
+	printb("Run 'kill -USR1 {}' to update training environment.".format(pid))
+
 	# optimizer
-	optimizer = get_optimizer(args.optimizer, args.learning_rate, args.momentum)
+	optimizer = get_optimizer(args.optimizer, env.learning_rate, args.momentum)
 	optimizer.setup(model)
 	if args.grad_clip > 0:
 		optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
 	if args.weight_decay > 0:
 		optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
-	final_learning_rate = 1e-6
+
 	total_time = 0
-
-	# マルチプロセスでデータを準備する場合
-	if args.multiprocessing:
-		num_preloads = 30
-		queue = preloading_loop(dataset, augmentation, num_preloads, Queue())
-		preloading_process = None
-
-	# シグナルで学習率の制御
-	pid = os.getpid()
-	print("kill -USR1 {}".format(pid))
-
-	def signal_usr1_handler(signum, stack):
-		decay_learning_rate(optimizer, 0.1, final_learning_rate)
-		printr("")
-		print("new learning rate: {}".format(get_current_learning_rate(optimizer)))
-
-	signal.signal(signal.SIGUSR1, signal_usr1_handler)
 
 	# 学習ループ
 	total_iterations_train = dataset.get_total_training_iterations()
@@ -141,7 +141,7 @@ def main():
 					preloading_process = Process(target=preloading_loop, args=(dataset, augmentation, num_preloads, queue))
 					preloading_process.start()
 				else:
-					minibatch_list = [dataset.get_minibatch(option=augmentation, gpu=False)]
+					minibatch_list = [dataset.sample_minibatch(augmentation=augmentation, gpu=False)]
 
 				for batch_idx, data in enumerate(minibatch_list):
 					try:
@@ -216,7 +216,7 @@ def main():
 		sys.stdout.write(stdout.CLEAR)
 		print("	loss:", sum_loss / total_iterations_train)
 		print("	CER:	{}".format(formatted_error(avg_errors_dev)))
-		print("	lr: {}".format(get_current_learning_rate(optimizer)))
+		print("	lr: {}".format(get_learning_rate(optimizer)))
 
 		# 学習率の減衰
 		decay_learning_rate(optimizer, args.lr_decay, final_learning_rate)
