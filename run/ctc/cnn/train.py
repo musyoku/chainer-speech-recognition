@@ -29,21 +29,7 @@ def preloading_loop(dataset, augmentation, num_load, queue):
 		queue.put(dataset.get_minibatch(option=augmentation, gpu=False))
 	return queue
 
-def main():
-	assert args.dataset_path is not None
-	assert args.working_directory is not None
-
-	# ワーキングディレクトリ
-	try:
-		os.mkdir(args.working_directory)
-	except:
-		pass
-
-	# データの読み込み
-	vocab_token_ids, vocab_id_tokens = get_unigram_ids()
-	vocab_size = len(vocab_token_ids)
-
-	# 設定
+def configure():
 	sampling_rate = 16000
 	frame_width = 0.032
 	config = chainer.global_config
@@ -56,7 +42,6 @@ def main():
 	config.using_delta = True
 	config.using_delta_delta = True
 	config.bucket_split_sec = 0.5
-	config.vocab_size = vocab_size
 	config.ndim_audio_features = args.ndim_audio_features
 	config.ndim_h = args.ndim_h
 	config.ndim_dense = args.ndim_dense
@@ -66,6 +51,30 @@ def main():
 	config.weightnorm = args.weightnorm
 	config.wgain = args.wgain
 	config.architecture = args.architecture
+	return config
+
+def main():
+	assert args.dataset_path is not None
+	assert args.working_directory is not None
+
+	# ワーキングディレクトリ
+	try:
+		os.mkdir(args.working_directory)
+	except:
+		pass
+
+	config_filename = os.path.join(args.working_directory, "model.json")
+	model_filename = os.path.join(args.working_directory, "model.hdf5")
+	env_filename = os.path.join(args.working_directory, "training.json")
+
+	# データの読み込み
+	vocab_token_ids, vocab_id_tokens = get_unigram_ids()
+	vocab_size = len(vocab_token_ids)
+
+	# 設定
+	config = configure()
+	config.vocab_size = vocab_size
+	save_config(config_filename, config)
 
 	# バケツごとのミニバッチサイズ
 	# GTX 1080 1台基準
@@ -73,7 +82,6 @@ def main():
 
 	dataset = Dataset(args.dataset_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
 		buckets_cache_size=200, apply_cmn=args.apply_cmn)
-	dataset.dump()
 
 	augmentation = AugmentationOption()
 	if args.augmentation:
@@ -81,12 +89,9 @@ def main():
 		augmentation.change_speech_rate = True
 		augmentation.add_noise = True
 
-	save_config(os.path.join(args.working_directory, "model.json"), config)
-
 	# モデル
-	model = load_model(os.path.join(args.working_directory, "model.hdf5"), config)
+	model = load_model(model_filename, config_filename)
 	if model is None:
-		config = chainer.config
 		model = build_model(vocab_size=vocab_size, ndim_audio_features=config.ndim_audio_features, 
 		 ndim_h=config.ndim_h, ndim_dense=config.ndim_dense, num_conv_layers=config.num_conv_layers,
 		 kernel_size=(3, 5), dropout=config.dropout, weightnorm=config.weightnorm, wgain=config.wgain,
@@ -106,16 +111,19 @@ def main():
 		augmentation.change_speech_rate = env.augmentation.change_speech_rate
 		augmentation.add_noise = env.augmentation.add_noise
 		printr("")
-		print("new learning rate: {}".format(get_learning_rate(optimizer)))
+		env.dump()
 
-	env = Environment(os.path.join(args.working_directory, "training.json"), signal_handler)
+	env = Environment(env_filename, signal_handler)
 	env.learning_rate = args.learning_rate
 	env.augmentation = augmentation
 	env.save()
-	env.dump()
 
 	pid = os.getpid()
 	print("Run '{}' to update training environment.".format(bold("kill -USR1 {}".format(pid))))
+
+	# ログ
+	dataset.dump()
+	env.dump()
 
 	# optimizer
 	optimizer = get_optimizer(args.optimizer, env.learning_rate, args.momentum)
@@ -135,6 +143,19 @@ def main():
 		# パラメータの更新
 		with chainer.using_config("train", True):
 			batch_train = dataset.get_training_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
+
+
+
+
+
+
+			batch_train.total_loop = 10
+
+
+
+
+
+
 
 			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in batch_train:
 
@@ -168,12 +189,11 @@ def main():
 			
 			# ノイズ無しデータでバリデーション
 			batch_dev = dataset.get_development_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
-			iterator = dataset.get_iterator_dev(batchsizes, None, gpu=args.gpu_device >= 0)
 			buckets_errors = []
-			for batch in iterator:
-				try:
-					x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = batch
 
+			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in batch_dev:
+
+				try:
 					printr("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
 
 					y_batch = model(x_batch, split_into_variables=False)
@@ -184,13 +204,16 @@ def main():
 						buckets_errors.append([])
 
 					buckets_errors[bucket_idx].append(error)
+
 				except Exception as e:
-					print(" ", bucket_idx, str(e))
+					printr("")
+					printc("{} (bucket {})".format(str(e), bucket_idx + 1), color="red")
 
 			avg_errors_dev = []
 			for errors in buckets_errors:
 				avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
+			print(avg_errors_dev)
 
 
 

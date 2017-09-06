@@ -48,13 +48,15 @@ def load_config(filename):
 	else:
 		return None
 
-def load_model(filename, config):
-	if os.path.isfile(filename):
+def load_model(model_filename, config_filename):
+	if os.path.isfile(model_filename):
+		config = load_config(config_filename)
+		assert config is not None, "{} not found.".format(config_filename)
 		model = build_model(**config)
 
-		if os.path.isfile(filename):
-			print("loading {} ...".format(filename))
-			serializers.load_hdf5(filename, model)
+		if os.path.isfile(model_filename):
+			print("loading {} ...".format(model_filename))
+			serializers.load_hdf5(model_filename, model)
 			
 		return model
 	else:
