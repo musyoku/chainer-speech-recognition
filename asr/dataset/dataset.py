@@ -70,7 +70,7 @@ class Dataset():
 		return DevelopmentBatchIterator(self, batchsizes, option, self.id_blank, gpu)
 
 	def get_total_training_iterations(self):
-		return self.reader.compute_total_training_iterations_with_batchsizes(self.batchsizes)
+		return self.reader.calculate_total_training_iterations_with_batchsizes(self.batchsizes)
 
 	def get_signals_by_bucket_and_group(self, bucket_idx, group_idx):
 		num_data = self.buckets_num_data[bucket_idx][group_idx]

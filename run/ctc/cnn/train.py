@@ -114,6 +114,9 @@ def main():
 	pid = os.getpid()
 	printb("Run 'kill -USR1 {}' to update training environment.".format(pid))
 
+	env.load()
+	env.dump()
+
 	# optimizer
 	optimizer = get_optimizer(args.optimizer, env.learning_rate, args.momentum)
 	optimizer.setup(model)

@@ -1,4 +1,4 @@
-import re, os, chainer
+import re, os, chainer, math
 import numpy as np
 from ..utils import printb
 
@@ -271,7 +271,7 @@ class BucketsReader():
 			print("{}	{:>6}	{:>4}	{:>6.3f}".format(bucket_idx + 1, num_train, num_dev, config.bucket_split_sec * (bucket_idx + 1)))
 		print("total	{:>6}	{:>4}".format(total_train, total_dev))
 
-	def compute_total_training_iterations_with_batchsizes(self, batchsizes):
+	def calculate_total_training_iterations_with_batchsizes(self, batchsizes):
 		num_buckets = len(self.buckets_signal)
 		batchsizes = batchsizes[:num_buckets]
 		itr = 0

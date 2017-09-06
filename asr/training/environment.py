@@ -1,19 +1,22 @@
-import os, signal, json
-from ..utils import Object
+import os, signal, json, sys
+from ..utils import Object, to_dict, printb
 
-def _to_dict(obj):
-	d = {}
-	for key in dir(obj):
-		if key.startswith("_") is False:
-			attr = getattr(obj, key)
-			print(type(attr))
-			if isinstance(attr, Object):
-				d[key] = _to_dict(attr)
-			elif callable(attr):
-				pass
-			else:
-				d[key] = attr
-	return d
+def _dump(d, depth):
+	for key in d:
+		value = d[key]
+		if isinstance(value, dict):
+			for _ in range(depth):
+				sys.stdout.write("	")
+			sys.stdout.write("{}:".format(key))
+			sys.stdout.write("\n")
+			_dump(value, depth + 1)
+		else:
+			for _ in range(depth):
+				sys.stdout.write("	")
+			sys.stdout.write(key)
+			sys.stdout.write(":	")
+			sys.stdout.write(str(value))
+			sys.stdout.write("\n")
 
 class Environment(Object):
 	def __init__(self, filename, handler):
@@ -26,7 +29,7 @@ class Environment(Object):
 		self._handler()
 
 	def save(self):
-		env = _to_dict(self)
+		env = to_dict(self)
 
 		print(env)
 		with open(self._filename, "w") as f:
@@ -45,3 +48,8 @@ class Environment(Object):
 		for key in dir(env):
 			if key.startswith("_") is False:
 				setattr(self, key, getattr(env, key))
+
+	def dump(self):
+		env = to_dict(self)
+		printb("[Environment]")
+		_dump(env, 0)
