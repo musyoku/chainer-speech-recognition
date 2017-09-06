@@ -1,3 +1,4 @@
+from ..utils import printr
 
 class TestBatchIterator():
 	def __init__(self, wav_dir, trn_dir, cache_dir, batchsizes, id_blank, buckets_limit=None, option=None, gpu=True):
@@ -133,3 +134,6 @@ class TrainingBatchIterator():
 		return self.dataset.sample_minibatch(self.option, self.gpu)
 
 	next = __next__  # Python 2
+
+	def console_log_progress(self):
+		printr("iteration {}/{}".format(self.loop_count, self.total_loop))

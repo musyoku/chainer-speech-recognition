@@ -12,7 +12,7 @@ from model import load_model, save_model, build_model, save_config
 from args import args
 from asr.error import compute_minibatch_error
 from asr.dataset import Dataset, AugmentationOption
-from asr.utils import stdout, printb, printr, bold
+from asr.utils import stdout, printb, printr, bold, printc
 from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer
 from asr.vocab import get_unigram_ids, ID_BLANK
 from asr.training import Environment, Iteration
@@ -97,6 +97,7 @@ def main():
 		model.to_gpu(args.gpu_device)
 
 	xp = model.xp
+	using_gpu = False if xp is np else True
 
 	# 環境
 	def signal_handler():
@@ -124,35 +125,71 @@ def main():
 	if args.weight_decay > 0:
 		optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
 
-	total_time = 0
 
 	# 学習
 	printb("[Training]")
-	iteration = Iteration(args.epochs)
-	batch_train = dataset.get_training_batch_iterator(batchsizes, augmentation=augmentation, gpu=False if xp is np else True)
-	batch_dev = dataset.get_development_batch_iterator(batchsizes, augmentation=augmentation, gpu=False if xp is np else True)
+	training_iterations = Iteration(args.epochs)
+	for epoch in training_iterations:
+		sum_loss = 0
 
-	for epoch in iteration:
+		# パラメータの更新
+		with chainer.using_config("train", True):
+			batch_train = dataset.get_training_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
 
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in batch_train:
+			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in batch_train:
 
-			printr("iteration {}/{}".format(batch_train.loop_count, batch_train.total_loop))
-			continue
-			# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
+				try:
+					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
 
-			# 誤差の計算
-			y_batch = model(x_batch)	# list of variables
-			loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+					# 誤差の計算
+					y_batch = model(x_batch)
+					loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
-			# NaN
-			loss_value = float(loss.data)
-			if loss_value != loss_value:
-				raise Exception("Encountered NaN when computing loss.")
+					# NaN
+					loss_value = float(loss.data)
+					if loss_value != loss_value:
+						raise Exception("Encountered NaN when computing loss.")
 
-			# 更新
-			optimizer.update(lossfun=lambda: loss)
+					# 更新
+					optimizer.update(lossfun=lambda: loss)
+					
+					sum_loss += loss_value
+					batch_train.console_log_progress()
 
+				except Exception as e:
+					printr("")
+					printc("{} (bucket {})".format(str(e), bucket_idx + 1), color="red")
+
+		save_model(os.path.join(args.working_directory, "model.hdf5"), model)
 		dataset.dump_num_updates()
+
+		# バリデーション
+		with chainer.using_config("train", False):
+			
+			# ノイズ無しデータでバリデーション
+			batch_dev = dataset.get_development_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
+			iterator = dataset.get_iterator_dev(batchsizes, None, gpu=args.gpu_device >= 0)
+			buckets_errors = []
+			for batch in iterator:
+				try:
+					x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx = batch
+
+					printr("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
+
+					y_batch = model(x_batch, split_into_variables=False)
+					y_batch = xp.argmax(y_batch.data, axis=2)
+					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
+
+					while bucket_idx >= len(buckets_errors):
+						buckets_errors.append([])
+
+					buckets_errors[bucket_idx].append(error)
+				except Exception as e:
+					print(" ", bucket_idx, str(e))
+
+			avg_errors_dev = []
+			for errors in buckets_errors:
+				avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
 
 

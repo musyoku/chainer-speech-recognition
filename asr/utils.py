@@ -18,6 +18,7 @@ def to_dict(obj):
 
 class stdout:
 	BOLD = "\033[1m"
+	RED = "\033[31m"
 	END = "\033[0m"
 	CLEAR = "\033[2K"
 	MOVE = "\033[1A"
@@ -33,3 +34,12 @@ def printr(string):
 	sys.stdout.write("\r" + stdout.CLEAR)
 	sys.stdout.write(string)
 	sys.stdout.flush()
+
+def printc(string, color):
+	code = None
+
+	if color == "red":
+		code = stdout.RED
+
+	assert code is not None
+	print(code + string + stdout.END)
