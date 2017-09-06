@@ -1,7 +1,7 @@
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--total-epoch", "-e", type=int, default=1000)
+parser.add_argument("--epochs", "-e", type=int, default=1000)
 parser.add_argument("--grad-clip", "-gc", type=float, default=1) 
 parser.add_argument("--weight-decay", "-wd", type=float, default=1e-5) 
 parser.add_argument("--learning-rate", "-lr", type=float, default=0.001)

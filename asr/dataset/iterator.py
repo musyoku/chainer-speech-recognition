@@ -130,6 +130,6 @@ class TrainingBatchIterator():
 		if self.loop_count >= self.total_loop:
 			raise StopIteration()
 		self.loop_count += 1
-		return dataset.get_minibatch(self.option, self.gpu)
+		return self.dataset.sample_minibatch(self.option, self.gpu)
 
 	next = __next__  # Python 2

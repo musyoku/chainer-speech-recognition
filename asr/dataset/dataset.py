@@ -63,11 +63,11 @@ class Dataset():
 		config = chainer.config
 		self.fbank = fft.get_filterbanks(nfft=config.num_fft, nfilt=config.num_mel_filters, samplerate=config.sampling_rate)
 
-	def get_iterator_train(self, batchsizes, option=None, gpu=True):
-		return TrainingBatchIterator(self, batchsizes, option, self.id_blank, gpu)
+	def get_training_batch_iterator(self, batchsizes, augmentation=None, gpu=True):
+		return TrainingBatchIterator(self, batchsizes, augmentation, self.id_blank, gpu)
 
-	def get_iterator_dev(self, batchsizes, option=None, gpu=True):
-		return DevelopmentBatchIterator(self, batchsizes, option, self.id_blank, gpu)
+	def get_development_batch_iterator(self, batchsizes, augmentation=None, gpu=True):
+		return DevelopmentBatchIterator(self, batchsizes, augmentation, self.id_blank, gpu)
 
 	def get_total_training_iterations(self):
 		return self.reader.calculate_total_training_iterations_with_batchsizes(self.batchsizes)
@@ -106,7 +106,7 @@ class Dataset():
 		return processing.extract_batch_features(batch, augmentation, self.apply_cmn, self.fbank)
 
 	def sample_minibatch(self, augmentation=None, gpu=True):
-		batch = self.reader.sample_minibatch(self.batchsizes)
+		batch, bucket_idx, group_idx = self.reader.sample_minibatch(self.batchsizes)
 		audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=augmentation)
 		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.features_to_minibatch(audio_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
 

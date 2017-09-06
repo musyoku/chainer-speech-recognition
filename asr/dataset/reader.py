@@ -1,4 +1,4 @@
-import re, os, chainer, math
+import re, os, chainer, math, pickle
 import numpy as np
 from ..utils import printb
 
@@ -241,9 +241,9 @@ class BucketsReader():
 		for data_idx in indices:
 			signal = signal_list[data_idx]
 			sentence = sentence_list[data_idx]
-			batch.append((signal, sentences))
+			batch.append((signal, sentence))
 
-		return batch
+		return batch, bucket_idx, group_idx
 
 	def dump_num_updates(self):
 		for bucket_idx in range(len(self.buckets_signal)):

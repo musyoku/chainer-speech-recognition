@@ -23,8 +23,11 @@ class stdout:
 	MOVE = "\033[1A"
 	LEFT = "\033[G"
 
+def bold(string):
+	return stdout.BOLD + string + stdout.END
+
 def printb(string):
-	print(stdout.BOLD + string + stdout.END)
+	print(bold(string))
 
 def printr(string):
 	sys.stdout.write("\r" + stdout.CLEAR)

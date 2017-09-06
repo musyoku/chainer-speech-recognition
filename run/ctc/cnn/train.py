@@ -12,10 +12,10 @@ from model import load_model, save_model, build_model, save_config
 from args import args
 from asr.error import compute_minibatch_error
 from asr.dataset import Dataset, AugmentationOption
-from asr.utils import stdout, printb, printr
+from asr.utils import stdout, printb, printr, bold
 from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer
 from asr.vocab import get_unigram_ids, ID_BLANK
-from asr.training.environment import Environment
+from asr.training import Environment, Iteration
 
 def formatted_error(error_values):
 	errors = []
@@ -81,7 +81,7 @@ def main():
 		augmentation.change_speech_rate = True
 		augmentation.add_noise = True
 
-	save_config(os.path.join(args.working_directory, "config.json"), config)
+	save_config(os.path.join(args.working_directory, "model.json"), config)
 
 	# モデル
 	model = load_model(os.path.join(args.working_directory, "model.hdf5"), config)
@@ -114,7 +114,7 @@ def main():
 	env.dump()
 
 	pid = os.getpid()
-	printb("Run 'kill -USR1 {}' to update training environment.".format(pid))
+	print("Run '{}' to update training environment.".format(bold("kill -USR1 {}".format(pid))))
 
 	# optimizer
 	optimizer = get_optimizer(args.optimizer, env.learning_rate, args.momentum)
@@ -126,11 +126,39 @@ def main():
 
 	total_time = 0
 
-	# 学習ループ
-	total_iterations_train = dataset.get_total_training_iterations()
-	for epoch in xrange(1, args.total_epoch + 1):
-		printb("Epoch %d" % epoch)
-		start_time = time.time()
+	# 学習
+	printb("[Training]")
+	iteration = Iteration(args.epochs)
+	batch_train = dataset.get_training_batch_iterator(batchsizes, augmentation=augmentation, gpu=False if xp is np else True)
+	batch_dev = dataset.get_development_batch_iterator(batchsizes, augmentation=augmentation, gpu=False if xp is np else True)
+
+	for epoch in iteration:
+
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in batch_train:
+
+			printr("iteration {}/{}".format(batch_train.loop_count, batch_train.total_loop))
+			continue
+			# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
+
+			# 誤差の計算
+			y_batch = model(x_batch)	# list of variables
+			loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+
+			# NaN
+			loss_value = float(loss.data)
+			if loss_value != loss_value:
+				raise Exception("Encountered NaN when computing loss.")
+
+			# 更新
+			optimizer.update(lossfun=lambda: loss)
+
+		dataset.dump_num_updates()
+
+
+
+
+
+	for epoch in iteration:
 		loss_value = 0
 		sum_loss = 0
 		
@@ -220,9 +248,8 @@ def main():
 		sys.stdout.write(stdout.LEFT)
 
 		# ログ
-		elapsed_time = time.time() - start_time
-		total_time += elapsed_time
-		print("Epoch {} done in {} min - total {} min".format(epoch, int(elapsed_time / 60), int(total_time / 60)))
+		iteration.done()
+
 		sys.stdout.write(stdout.CLEAR)
 		print("	loss:", sum_loss / total_iterations_train)
 		print("	CER:	{}".format(formatted_error(avg_errors_dev)))

@@ -1,3 +1,8 @@
+import chainer
+import numpy as np
+from chainer import cuda
+from .. import fft
+from ..vocab import convert_sentence_to_unigram_tokens
 
 def generate_signal_transcription_pairs(trn_path, audio, sampling_rate):
 	config = chainer.config
