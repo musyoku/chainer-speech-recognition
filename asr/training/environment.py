@@ -18,14 +18,23 @@ def _dump(d, depth):
 			sys.stdout.write(str(value))
 			sys.stdout.write("\n")
 
+def _set(self, d):
+	for key in d:
+		value = d[key]
+		if hasattr(self, key):
+			if isinstance(value, dict):
+				_set(getattr(self, key), value)
+			else:
+				setattr(self, key, value)
+
 class Environment(Object):
 	def __init__(self, filename, handler):
 		self._filename = filename
 		self._handler = handler
 		signal.signal(signal.SIGUSR1, self.handler)
 
-	def handler(self):
-		self.load(self._filename)
+	def handler(self, _, __):
+		self.load()
 		self._handler()
 
 	def save(self):
@@ -42,10 +51,7 @@ class Environment(Object):
 				except:
 					pass
 		assert env is not None, "could not load {}".format(self._filename)
-
-		for key in dir(env):
-			if key.startswith("_") is False:
-				setattr(self, key, getattr(env, key))
+		_set(self, env)
 
 	def dump(self):
 		env = to_dict(self)

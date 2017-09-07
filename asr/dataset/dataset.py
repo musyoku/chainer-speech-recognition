@@ -76,6 +76,9 @@ class Dataset():
 	def get_total_dev_iterations(self):
 		return self.reader.calculate_total_dev_iterations_with_batchsizes(self.batchsizes_dev)
 
+	def get_num_buckets(self):
+		return self.reader.get_num_buckets()
+
 	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
 		return processing.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu)
 

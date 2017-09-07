@@ -155,7 +155,7 @@ class BucketsReader():
 			buckets_signal = buckets_signal[:buckets_limit]
 			buckets_sentence = buckets_sentence[:buckets_limit]
 			buckets_num_data = buckets_num_data[:buckets_limit]
-			buckets_num_updates = buckets_num_data[:buckets_limit]
+			buckets_num_updates = buckets_num_updates[:buckets_limit]
 
 		buckets_num_pieces = []
 		for bucket in buckets_signal:
@@ -295,3 +295,6 @@ class BucketsReader():
 			for indices_train in indices_piece_dev:
 				itr += int(math.ceil(len(indices_train) / batchsize))
 		return itr
+
+	def get_num_buckets(self):
+		return len(self.buckets_signal)

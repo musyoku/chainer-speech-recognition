@@ -86,8 +86,8 @@ class DevelopmentBatchIterator():
 		if bucket_id >= len(buckets_indices):
 			raise StopIteration()
 
-		signal_list = self.dataset.reader.get_signals_by_bucket_and_group(bucket_id, piece_id)
-		sentence_list = self.dataset.reader.get_sentences_by_bucket_and_group(bucket_id, piece_id)
+		signal_list = self.dataset.reader.get_signals_by_bucket_and_piece(bucket_id, piece_id)
+		sentence_list = self.dataset.reader.get_sentences_by_bucket_and_piece(bucket_id, piece_id)
 				
 		indices_dev = buckets_indices[bucket_id][piece_id]
 
@@ -123,7 +123,7 @@ class DevelopmentBatchIterator():
 		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id
 
 	next = __next__  # Python 2
-	
+
 	def get_total_iterations(self):
 		return self.total_itr
 		

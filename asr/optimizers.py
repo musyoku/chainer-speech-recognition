@@ -14,12 +14,16 @@ def get_learning_rate(opt):
 def set_learning_rate(opt, lr):
 	if isinstance(opt, optimizers.NesterovAG):
 		opt.lr = lr
+		return
 	if isinstance(opt, optimizers.MomentumSGD):
 		opt.lr = lr
+		return
 	if isinstance(opt, optimizers.SGD):
 		opt.lr = lr
+		return
 	if isinstance(opt, optimizers.Adam):
 		opt.alpha = lr
+		return
 	raise NotImplementedError()
 
 def get_optimizer(name, lr, momentum):

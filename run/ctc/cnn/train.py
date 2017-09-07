@@ -14,7 +14,7 @@ from args import args
 from asr.error import compute_minibatch_error
 from asr.dataset import Dataset, AugmentationOption
 from asr.utils import stdout, printb, printr, bold, printc
-from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer
+from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer, set_learning_rate
 from asr.vocab import get_unigram_ids, ID_BLANK
 from asr.training import Environment, Iteration
 
@@ -148,10 +148,8 @@ def main():
 		# パラメータの更新
 		with chainer.using_config("train", True):
 			batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
-			batch_train.total_itr = 10
-			iteration_train = tqdm(batch_train, desc="training", total=batch_train.get_total_iterations())
 
-			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in iteration_train:
+			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in tqdm(batch_train, desc="training", total=batch_train.get_total_iterations()):
 
 				try:
 					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
@@ -172,7 +170,7 @@ def main():
 
 				except Exception as e:
 					printr("")
-					printc("{} (bucket {})".format(str(e), bucket_idx + 1), color="red")
+					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
 
 		save_model(os.path.join(args.working_directory, "model.hdf5"), model)
 		# dataset.dump_num_updates()
@@ -182,24 +180,19 @@ def main():
 			
 			# ノイズ無しデータでバリデーション
 			batch_dev = dataset.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
-			iteration_dev = tqdm(batch_dev, desc="eval", total=batch_train.get_total_iterations())
-			buckets_errors = []
+			buckets_errors = [[] for i in range(dataset.get_num_buckets())]
 
-			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in tqdm(batch_dev, total=batch_dev.get_total_iterations):
+			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
 
 				try:
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
 					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
-
-					while bucket_idx >= len(buckets_errors):
-						buckets_errors.append([])
-
-					buckets_errors[bucket_idx].append(error)
+					buckets_errors[bucket_id].append(error)
 
 				except Exception as e:
 					printr("")
-					printc("{} (bucket {})".format(str(e), bucket_idx + 1), color="red")
+					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
 					
 			# printr("")
 			avg_errors_dev = []

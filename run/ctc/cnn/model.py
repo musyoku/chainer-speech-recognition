@@ -2,7 +2,7 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import sys, os, json, pickle, math, chainer
+import sys, os, json, pickle, math, chainer, uuid
 import chainer.functions as F
 import chainer.links as L
 from six.moves import xrange
@@ -12,9 +12,11 @@ from asr.stream import Stream
 import asr.stream as nn
 
 def save_model(filename, model):
+	tmp_filename = str(uuid.uuid4())
+	serializers.save_hdf5(tmp_filename, model)
 	if os.path.isfile(filename):
 		os.remove(filename)
-	serializers.save_hdf5(filename, model)
+	os.rename(tmp_filename, filename)
 
 def save_config(filename, config, overwrite=False):
 	if os.path.isfile(filename) and overwrite is False:
