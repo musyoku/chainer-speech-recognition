@@ -31,7 +31,7 @@ class AugmentationOption(Object):
 		return False
 
 class Dataset():
-	def __init__(self, data_path, batchsizes, buckets_limit=None, buckets_cache_size=200, token_ids=None, dev_split=0.01, seed=0, 
+	def __init__(self, data_path, batchsizes_train, batchsizes_dev, buckets_limit=None, buckets_cache_size=200, token_ids=None, dev_split=0.01, seed=0, 
 		id_blank=0, apply_cmn=False, global_normalization=True):
 		assert token_ids is not None
 		assert isinstance(token_ids, dict)
@@ -39,7 +39,8 @@ class Dataset():
 		self.data_path = data_path
 		self.id_blank = 0
 		self.token_ids = token_ids
-		self.batchsizes = batchsizes
+		self.batchsizes_train = batchsizes_train
+		self.batchsizes_dev = batchsizes_dev
 		self.apply_cmn = apply_cmn
 		self.global_normalization = global_normalization
 
@@ -70,7 +71,10 @@ class Dataset():
 		return DevelopmentBatchIterator(self, batchsizes, augmentation, gpu)
 
 	def get_total_training_iterations(self):
-		return self.reader.calculate_total_training_iterations_with_batchsizes(self.batchsizes)
+		return self.reader.calculate_total_training_iterations_with_batchsizes(self.batchsizes_train)
+
+	def get_total_dev_iterations(self):
+		return self.reader.calculate_total_dev_iterations_with_batchsizes(self.batchsizes_dev)
 
 	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
 		return processing.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu)
@@ -79,7 +83,7 @@ class Dataset():
 		return processing.extract_batch_features(batch, augmentation, self.apply_cmn, self.fbank)
 
 	def sample_minibatch(self, augmentation=None, gpu=True):
-		batch, bucket_idx, group_idx = self.reader.sample_minibatch(self.batchsizes)
+		batch, bucket_idx, group_idx = self.reader.sample_minibatch(self.batchsizes_train)
 		audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=augmentation)
 		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.features_to_minibatch(audio_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
 

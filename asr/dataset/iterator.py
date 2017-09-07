@@ -5,7 +5,7 @@ class TestBatchIterator():
 		self.option = None
 		self.batchsizes = batchsizes
 		self.gpu = gpu
-		self.bucket_idx = 0
+		self.bucket_id = 0
 		self.pos = 0
 		self.id_blank = id_blank
 		self.buckets_signal, self.buckets_sentence = load_test_buckets(wav_dir, trn_dir, buckets_limit)
@@ -28,39 +28,39 @@ class TestBatchIterator():
 		self.std = np.load(std_filename)[None, ...].astype(np.float32)
 
 	def reset(self):
-		self.bucket_idx = 0
+		self.bucket_id = 0
 		self.pos = 0
 
 	def __iter__(self):
 		return self
 
 	def __next__(self):
-		bucket_idx = self.bucket_idx
+		bucket_id = self.bucket_id
 
-		if bucket_idx >= len(self.buckets_signal):
+		if bucket_id >= len(self.buckets_signal):
 			raise StopIteration()
 
-		num_data = len(self.buckets_signal[bucket_idx])
+		num_data = len(self.buckets_signal[bucket_id])
 		while num_data == 0:
-			bucket_idx += 1
-			if bucket_idx >= len(self.buckets_signal):
+			bucket_id += 1
+			if bucket_id >= len(self.buckets_signal):
 				raise StopIteration()
-			num_data = len(self.buckets_signal[bucket_idx])
+			num_data = len(self.buckets_signal[bucket_id])
 
-		batchsize = self.batchsizes[bucket_idx]
+		batchsize = self.batchsizes[bucket_id]
 		batchsize = num_data - self.pos if batchsize > num_data - self.pos else batchsize
 		indices = np.arange(self.pos, self.pos + batchsize)
 		assert len(indices) > 0
 
-		extracted_features, sentences, max_feature_length, max_sentence_length = extract_features_by_indices(indices, self.buckets_signal[bucket_idx], self.buckets_sentence[bucket_idx], option=self.option, apply_cmn=self.apply_cmn)
+		extracted_features, sentences, max_feature_length, max_sentence_length = extract_features_by_indices(indices, self.buckets_signal[bucket_id], self.buckets_sentence[bucket_id], option=self.option, apply_cmn=self.apply_cmn)
 		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = features_to_minibatch(extracted_features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu=self.gpu)
 
 		self.pos += batchsize
 		if self.pos >= num_data:
 			self.pos = 0
-			self.bucket_idx += 1
+			self.bucket_id += 1
 
-		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, self.pos / num_data
+		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, self.pos / num_data
 
 	next = __next__  # Python 2
 
@@ -70,28 +70,30 @@ class DevelopmentBatchIterator():
 		self.batchsizes = batchsizes
 		self.augmentation = None
 		self.gpu = gpu
-		self.bucket_idx = 0
-		self.group_idx = 0
+		self.bucket_id = 0
+		self.piece_id = 0
 		self.pos = 0
+		self.total_itr = dataset.get_total_dev_iterations()
 
 	def __iter__(self):
 		return self
 
 	def __next__(self):
-		bucket_idx = self.bucket_idx
-		group_idx = self.group_idx
+		bucket_id = self.bucket_id
+		piece_id = self.piece_id
 		buckets_indices = self.dataset.reader.buckets_indices_dev
 
-		if bucket_idx >= len(buckets_indices):
+		if bucket_id >= len(buckets_indices):
 			raise StopIteration()
 
-		signal_list = self.dataset.reader.get_signals_by_bucket_and_group(bucket_idx, group_idx)
-		sentence_list = self.dataset.reader.get_sentences_by_bucket_and_group(bucket_idx, group_idx)
+		signal_list = self.dataset.reader.get_signals_by_bucket_and_group(bucket_id, piece_id)
+		sentence_list = self.dataset.reader.get_sentences_by_bucket_and_group(bucket_id, piece_id)
 				
-		indices_dev = buckets_indices[bucket_idx][group_idx]
+		indices_dev = buckets_indices[bucket_id][piece_id]
 
-		batchsize = self.batchsizes[bucket_idx]
-		batchsize = len(indices_dev) - self.pos if batchsize > len(indices_dev) - self.pos else batchsize
+		batchsize = self.batchsizes[bucket_id]
+		if batchsize > len(indices_dev) - self.pos:
+			batchsize = len(indices_dev) - self.pos
 		indices = indices_dev[self.pos:self.pos + batchsize]
 
 		if len(indices) == 0:
@@ -111,16 +113,19 @@ class DevelopmentBatchIterator():
 
 		self.pos += batchsize
 		if self.pos >= len(indices_dev):
-			self.group_idx += 1
+			self.piece_id += 1
 			self.pos = 0
 
-		if self.group_idx >= len(buckets_indices[bucket_idx]):
-			self.group_idx = 0
-			self.bucket_idx += 1
+		if self.piece_id >= len(buckets_indices[bucket_id]):
+			self.piece_id = 0
+			self.bucket_id += 1
 
-		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx
+		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id
 
 	next = __next__  # Python 2
+	
+	def get_total_iterations(self):
+		return self.total_itr
 		
 class TrainingBatchIterator():
 	def __init__(self, dataset, batchsizes, augmentation=None, gpu=True):
@@ -141,9 +146,6 @@ class TrainingBatchIterator():
 		return self.dataset.sample_minibatch(self.augmentation, self.gpu)
 
 	next = __next__  # Python 2
-
-	def console_log_progress(self):
-		printr("iteration {}/{}".format(self.itr, self.total_itr))
 
 	def get_total_iterations(self):
 		return self.total_itr

@@ -79,9 +79,10 @@ def main():
 
 	# バケツごとのミニバッチサイズ
 	# GTX 1080 1台基準
-	batchsizes = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
+	batchsizes_train = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
+	batchsizes_dev = [size * 3 for size in batchsizes_train]
 
-	dataset = Dataset(args.dataset_path, batchsizes, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
+	dataset = Dataset(args.dataset_path, batchsizes_train, batchsizes_dev, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
 		buckets_cache_size=200, apply_cmn=args.apply_cmn)
 
 	augmentation = AugmentationOption()
@@ -139,17 +140,18 @@ def main():
 
 	# 学習
 	printb("[Training]")
-	training_iterations = Iteration(args.epochs)
+	epochs = Iteration(args.epochs)
 
-	for itr in training_iterations:
+	for epoch in epochs:
 		sum_loss = 0
 
 		# パラメータの更新
 		with chainer.using_config("train", True):
-			batch_train = dataset.get_training_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
+			batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
 			batch_train.total_itr = 10
+			iteration_train = tqdm(batch_train, desc="training", total=batch_train.get_total_iterations())
 
-			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in tqdm(batch_train, total=batch_train.get_total_iterations()):
+			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in iteration_train:
 
 				try:
 					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
@@ -179,7 +181,8 @@ def main():
 		with chainer.using_config("train", False):
 			
 			# ノイズ無しデータでバリデーション
-			batch_dev = dataset.get_development_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
+			batch_dev = dataset.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
+			iteration_dev = tqdm(batch_dev, desc="eval", total=batch_train.get_total_iterations())
 			buckets_errors = []
 
 			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in tqdm(batch_dev, total=batch_dev.get_total_iterations):
@@ -203,7 +206,7 @@ def main():
 			for errors in buckets_errors:
 				avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-			training_iterations.log({
+			epochs.log({
 				"loss": sum_loss / batch_train.get_total_iterations(),
 				"CER": formatted_error(avg_errors_dev),
 				"lr": get_learning_rate(optimizer)
