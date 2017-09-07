@@ -1,5 +1,5 @@
 import time, sys
-from ..utils import printb
+from ..utils import printb, stdout
 
 def _dump(d, depth):
 	for key in d:
@@ -21,25 +21,36 @@ def _dump(d, depth):
 class Iteration():
 	def __init__(self, epochs):
 		self.epochs = epochs
-		self.itr = 0
-		self.epoch_start_time = 0
-		self.total_time = 0
+		self.current_epoch = 0
+		self.current_epoch_start_time = 0
+		self.start_time = 0
+		self.epoch = None
 
 	def __iter__(self):
 		return self
 
 	def __next__(self):
-		if self.itr == self.epochs:
+		if self.current_epoch == self.epochs:
 			raise StopIteration()
-		self.itr += 1
-		self.epoch_start_time = time.time()
-		printb("Epoch %d" % self.itr)
-		return self.itr
+
+		if self.start_time == 0:
+			self.start_time = time.time()
+
+		self.current_epoch += 1
+		self.current_epoch_start_time = time.time()
+		printb("Epoch %d" % self.current_epoch)
+		return self.current_epoch
+
+	def log_progress(self, string):
+		printr(string)
+
+	def log(self, d):
+		sys.stdout.write(stdout.CLEAR)
+		sys.stdout.write(stdout.MOVE)
+		sys.stdout.write(stdout.LEFT)
+		total_time = time.time() - self.start_time
+		elapsed_time = time.time() - self.current_epoch_start_time
+		printb("Epoch {} done in {} min - total {} min".format(self.current_epoch, int(elapsed_time / 60), int(total_time / 60)))
+		_dump(d, 1)
 
 	next = __next__  # Python 2
-
-	def done(self, d):
-		elapsed_time = time.time() - self.epoch_start_time
-		self.total_time += elapsed_time
-		printb("Epoch {} done in {} min - total {} min".format(self.itr, int(elapsed_time / 60), int(self.total_time / 60)))
-		_dump(d, 1)

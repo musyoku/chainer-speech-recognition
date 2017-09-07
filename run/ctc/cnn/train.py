@@ -6,6 +6,7 @@ import sys, argparse, time, cupy, math, os, binascii, signal
 import chainer
 import numpy as np
 import chainer.functions as F
+from tqdm import tqdm
 from chainer import cuda, serializers
 from multiprocessing import Process, Queue
 from model import load_model, save_model, build_model, save_config
@@ -140,27 +141,15 @@ def main():
 	printb("[Training]")
 	training_iterations = Iteration(args.epochs)
 
-	for epoch in training_iterations:
+	for itr in training_iterations:
 		sum_loss = 0
 
 		# パラメータの更新
 		with chainer.using_config("train", True):
 			batch_train = dataset.get_training_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
-
-
-
-
-
-
 			batch_train.total_itr = 10
 
-
-
-
-
-
-
-			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in batch_train:
+			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in tqdm(batch_train, total=batch_train.get_total_iterations()):
 
 				try:
 					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
@@ -178,14 +167,13 @@ def main():
 					optimizer.update(lossfun=lambda: loss)
 					
 					sum_loss += loss_value
-					batch_train.console_log_progress()
 
 				except Exception as e:
 					printr("")
 					printc("{} (bucket {})".format(str(e), bucket_idx + 1), color="red")
 
 		save_model(os.path.join(args.working_directory, "model.hdf5"), model)
-		dataset.dump_num_updates()
+		# dataset.dump_num_updates()
 
 		# バリデーション
 		with chainer.using_config("train", False):
@@ -194,11 +182,9 @@ def main():
 			batch_dev = dataset.get_development_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
 			buckets_errors = []
 
-			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in batch_dev:
+			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx in tqdm(batch_dev, total=batch_dev.get_total_iterations):
 
 				try:
-					printr("computing CER of bucket {} (group {})".format(bucket_idx + 1, group_idx + 1))
-
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
 					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
@@ -212,12 +198,12 @@ def main():
 					printr("")
 					printc("{} (bucket {})".format(str(e), bucket_idx + 1), color="red")
 					
-			printr("")
+			# printr("")
 			avg_errors_dev = []
 			for errors in buckets_errors:
 				avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-			training_iterations.done({
+			training_iterations.log({
 				"loss": sum_loss / batch_train.get_total_iterations(),
 				"CER": formatted_error(avg_errors_dev),
 				"lr": get_learning_rate(optimizer)
