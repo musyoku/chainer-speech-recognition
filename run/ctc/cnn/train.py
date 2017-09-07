@@ -17,6 +17,7 @@ from asr.utils import stdout, printb, printr, bold, printc
 from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer, set_learning_rate
 from asr.vocab import get_unigram_ids, ID_BLANK
 from asr.training import Environment, Iteration
+from asr.logging import Report
 
 def formatted_error(error_values):
 	errors = []
@@ -67,6 +68,7 @@ def main():
 	config_filename = os.path.join(args.working_directory, "model.json")
 	model_filename = os.path.join(args.working_directory, "model.hdf5")
 	env_filename = os.path.join(args.working_directory, "training.json")
+	log_filename = os.path.join(args.working_directory, "log.txt")
 
 	# データの読み込み
 	vocab_token_ids, vocab_id_tokens = get_unigram_ids()
@@ -83,7 +85,7 @@ def main():
 	batchsizes_dev = [size * 3 for size in batchsizes_train]
 
 	dataset = Dataset(args.dataset_path, batchsizes_train, batchsizes_dev, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
-		buckets_cache_size=200, apply_cmn=args.apply_cmn)
+		buckets_cache_size=1000, apply_cmn=args.apply_cmn)
 
 	augmentation = AugmentationOption()
 	if args.augmentation:
@@ -141,15 +143,19 @@ def main():
 	# 学習
 	printb("[Training]")
 	epochs = Iteration(args.epochs)
-
+	report = Report(log_filename)
+	
 	for epoch in epochs:
 		sum_loss = 0
 
 		# パラメータの更新
 		with chainer.using_config("train", True):
 			batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
+			batch_train.total_itr = 10
 
 			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in tqdm(batch_train, desc="training", total=batch_train.get_total_iterations()):
+
+				continue
 
 				try:
 					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
@@ -173,7 +179,9 @@ def main():
 					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
 
 		save_model(os.path.join(args.working_directory, "model.hdf5"), model)
-		# dataset.dump_num_updates()
+
+		report("Epoch {}".format(epoch))
+		report(dataset.get_statistics())
 
 		# バリデーション
 		with chainer.using_config("train", False):
@@ -199,11 +207,13 @@ def main():
 			for errors in buckets_errors:
 				avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-			epochs.log({
+			info = {
 				"loss": sum_loss / batch_train.get_total_iterations(),
 				"CER": formatted_error(avg_errors_dev),
 				"lr": get_learning_rate(optimizer)
-			})
+			}
+			epochs.log(info)
+			report(info)
 
 			# 学習率の減衰
 			decay_learning_rate(optimizer, env.lr_decay, env.final_learning_rate)

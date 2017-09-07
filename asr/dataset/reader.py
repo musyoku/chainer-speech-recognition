@@ -252,12 +252,14 @@ class BucketsReader():
 
 		return batch, bucket_id, piece_id
 
-	def dump_num_updates(self):
+	def get_statistics(self):
+		content = ""
 		for bucket_id in range(len(self.buckets_signal)):
-			printb("bucket " + str(bucket_id))
+			content += "bucket {}\n".format(str(bucket_id + 1))
 			buckets = self.buckets_num_updates[bucket_id]
-			print(buckets)
-			print(sum(buckets) / len(buckets))
+			content += "{}\n".format(str(buckets))
+			content += "{}\n".format(sum(buckets) / len(buckets))
+		return content
 
 	def dump(self):
 		printb("	bucket	#train	#dev	sec")

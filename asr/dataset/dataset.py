@@ -92,8 +92,10 @@ class Dataset():
 
 		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx
 
-	def dump_num_updates(self):
-		self.reader.dump_num_updates()
+	def get_statistics(self):
+		content = ""
+		content += self.reader.get_statistics()
+		return content
 
 	def dump(self):
 		printb("[Dataset]")
