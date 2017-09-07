@@ -151,7 +151,6 @@ def main():
 		# パラメータの更新
 		with chainer.using_config("train", True):
 			batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
-			batch_train.total_itr = 10
 
 			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in tqdm(batch_train, desc="training", total=batch_train.get_total_iterations()):
 
