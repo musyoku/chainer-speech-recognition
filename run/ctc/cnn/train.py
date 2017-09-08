@@ -7,7 +7,8 @@ from chainer import cuda
 from model import load_model, save_model, build_model, save_config, configure
 from args import args
 from asr.error import compute_minibatch_error
-from asr.data import AugmentationOption, BucketsLoader
+from asr.data import AugmentationOption
+from asr.data.loaders.buckets import Loader
 from asr.utils import printb, printr, printc, bold
 from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer, set_learning_rate
 from asr.vocab import get_unigram_ids, ID_BLANK
@@ -60,7 +61,7 @@ def main():
 	batchsizes_dev = [size * 3 for size in batchsizes_train]
 
 	# データセットの読み込み
-	loader = BucketsLoader(
+	loader = Loader(
 		data_path=args.dataset_path, 				# バケツ変換済みのデータへのパス
 		batchsizes_train=batchsizes_train, 			# 学習時のバッチサイズ
 		batchsizes_dev=batchsizes_dev, 				# 評価時のバッチサイズ
@@ -90,7 +91,7 @@ def main():
 		augmentation.add_noise = True
 
 	# モデル
-	model = load_model(model_filename, config_filename)
+	model, _ = load_model(model_filename, config_filename)
 	if model is None:
 		model = build_model(config)
 

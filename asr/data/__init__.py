@@ -1,1 +1,2 @@
-from .loader import BucketsLoader, AudioLoader, AugmentationOption
+from . import loaders
+from .augment import AugmentationOption

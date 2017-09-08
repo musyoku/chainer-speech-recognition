@@ -5,7 +5,8 @@ from chainer import cuda
 from model import load_model, load_config
 from args import args
 from asr.error import compute_minibatch_error
-from asr.data import AugmentationOption, AudioLoader
+from asr.data import AugmentationOption
+from asr.data.loaders.audio import Loader
 from asr.utils import printb, printr, printc, bold
 from asr.vocab import get_unigram_ids, ID_BLANK
 
@@ -41,7 +42,7 @@ def main():
 	assert model is not None
 
 	# テストデータの読み込み
-	loader = AudioLoader(
+	loader = Loader(
 		wav_directory_list=[
 			"/home/stark/sandbox/CSJ/WAV/test",
 		], 
@@ -83,7 +84,7 @@ def main():
 
 	# バッチサイズの調整
 	print("Searching for the best batch size ...")
-	batch_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
+	batch_dev = loader.get_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
 	for _ in range(50):
 		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
 			try:
@@ -92,14 +93,14 @@ def main():
 					y_batch = xp.argmax(y_batch.data, axis=2)
 			except Exception as e:
 				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
-					batchsizes_dev[bucket_id] = max(batchsizes_dev[bucket_id] - 16, 4)
-					print("new batchsize {} for bucket {}".format(batchsizes_dev[bucket_id], bucket_id + 1))
+					batchsizes[bucket_id] = max(batchsizes[bucket_id] - 16, 4)
+					print("new batchsize {} for bucket {}".format(batchsizes[bucket_id], bucket_id + 1))
 			break
 
 
 	# ノイズ無しデータでバリデーション
 	printb("[Evaluation]")
-	batch_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
+	batch_dev = loader.get_development_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
 	buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
 	for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:

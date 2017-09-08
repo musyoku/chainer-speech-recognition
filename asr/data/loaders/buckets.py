@@ -1,63 +1,11 @@
 import os
 import numpy as np
-from .reader import BucketsReader, AudioReader
-from .processing import Processor
-from .iterator import TrainingBatchIterator, DevelopmentBatchIterator
-from ..utils import stdout, printb, Object
+from ..reader import BucketsReader, AudioReader
+from ..processing import Processor
+from ...utils import stdout, printb, Object
+from .. import iterators
 
-class AugmentationOption(Object):
-	def __init__(self):
-		self.change_vocal_tract = False
-		self.change_speech_rate = False
-		self.add_noise = False
-
-	def using_augmentation(self):
-		if self.change_vocal_tract:
-			return True
-		if self.change_speech_rate:
-			return True
-		if self.add_noise:
-			return True
-		return False
-
-class AudioLoader():
-	def __init__(self, wav_directory_list, transcription_directory_list, mean_filename, std_filename, batchsizes, buckets_limit=None, 
-		bucket_split_sec=0.5, vocab_token_to_id=None, seed=0, id_blank=0, apply_cmn=False, sampling_rate=16000, frame_width=0.032, 
-		frame_shift=0.01, num_mel_filters=40, window_func="hanning", using_delta=True, using_delta_delta=True):
-
-		assert vocab_token_to_id is not None
-		assert isinstance(vocab_token_to_id, dict)
-
-		self.batchsizes = batchsizes
-		self.token_ids = vocab_token_to_id
-		self.id_blank = id_blank
-		self.apply_cmn = apply_cmn
-
-		self.processor = Processor(sampling_rate=sampling_rate, frame_width=frame_width, frame_shift=frame_shift, 
-			num_mel_filters=num_mel_filters, window_func=window_func, using_delta=using_delta, using_delta_delta=using_delta_delta)
-
-		self.reader = AudioReader(wav_directory_list=wav_directory_list, transcription_directory_list=transcription_directory_list, 
-			buckets_limit=buckets_limit, frame_width=frame_width, bucket_split_sec=bucket_split_sec)
-
-		self.mean = None
-		self.std = None
-
-		try:
-			if isinstance(mean_filename, str) and isinstance(std_filename, str):
-				if os.path.isfile(mean_filename) == False:
-					raise Exception()
-				if os.path.isfile(std_filename) == False:
-					raise Exception()
-				self.mean = np.load(mean_filename)[None, ...].astype(np.float32)
-				self.std = np.load(std_filename)[None, ...].astype(np.float32)
-		except:
-			raise Exception("Run preprocess/buckets.py before starting training.")
-
-	def dump(self):
-		self.reader.dump()
-
-
-class BucketsLoader():
+class Loader():
 	def __init__(self, data_path, batchsizes_train, batchsizes_dev=None, buckets_limit=None, bucket_split_sec=0.5,
 		buckets_cache_size=200, vocab_token_to_id=None, dev_split=0.01, seed=0, id_blank=0, apply_cmn=False, 
 		global_normalization=True, sampling_rate=16000, frame_width=0.032, frame_shift=0.01, num_mel_filters=40, 
@@ -130,10 +78,10 @@ class BucketsLoader():
 		self.batchsizes_dev = batchsizes
 
 	def get_training_batch_iterator(self, batchsizes, augmentation=None, gpu=True):
-		return TrainingBatchIterator(self, batchsizes, augmentation, gpu)
+		return iterators.buckets.train.Iterator(self, batchsizes, augmentation, gpu)
 
 	def get_development_batch_iterator(self, batchsizes, augmentation=None, gpu=True):
-		return DevelopmentBatchIterator(self, batchsizes, augmentation, gpu)
+		return iterators.buckets.dev.Iterator(self, batchsizes, augmentation, gpu)
 
 	def get_statistics(self):
 		content = ""

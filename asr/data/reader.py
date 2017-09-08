@@ -287,6 +287,14 @@ class AudioReader():
 
 		return buckets_signal, buckets_sentence, total_min
 
+	def calculate_total_iterations_with_batchsizes(self, batchsizes):
+		num_buckets = len(self.buckets_signal)
+		batchsizes = batchsizes[:num_buckets]
+		itr = 0
+		for buckets, batchsize in zip(self.buckets_signal, batchsizes):
+			itr += int(math.ceil(len(buckets) / batchsize))
+		return itr
+
 	def dump(self):
 		printr("")
 		printb("bucket	#data	sec")

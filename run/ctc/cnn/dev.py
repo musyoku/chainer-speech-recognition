@@ -5,7 +5,8 @@ from chainer import cuda
 from model import load_model, load_config
 from args import args
 from asr.error import compute_minibatch_error
-from asr.data import AugmentationOption, BucketsLoader
+from asr.data import AugmentationOption
+from asr.data.loaders.buckets import Loader
 from asr.utils import printb, printr, printc, bold
 from asr.vocab import get_unigram_ids, ID_BLANK
 
@@ -41,7 +42,7 @@ def main():
 	assert model is not None
 
 	# データセットの読み込み
-	loader = BucketsLoader(
+	loader = Loader(
 		data_path=args.dataset_path, 				# バケツ変換済みのデータへのパス
 		batchsizes_train=batchsizes_dev, 			# 学習時のバッチサイズ
 		batchsizes_dev=batchsizes_dev, 				# 評価時のバッチサイズ
