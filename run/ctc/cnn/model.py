@@ -9,7 +9,7 @@ from six.moves import xrange
 from chainer import Chain, serializers, initializers, variable, functions
 sys.path.append(os.path.join("..", "..", ".."))
 from asr.stream import Stream
-from asr.utils import to_dict
+from asr.utils import to_dict, to_object
 import asr.stream as nn
 
 class Configuration():
@@ -64,7 +64,7 @@ def load_config(filename):
 			except Exception as e:
 				raise Exception("could not load {}".format(filename))
 
-		return params
+		return to_object(params)
 	else:
 		return None
 
@@ -72,15 +72,15 @@ def load_model(model_filename, config_filename):
 	if os.path.isfile(model_filename):
 		config = load_config(config_filename)
 		assert config is not None, "{} not found.".format(config_filename)
-		model = build_model(**config)
+		model = build_model(config)
 
 		if os.path.isfile(model_filename):
 			print("loading {} ...".format(model_filename))
 			serializers.load_hdf5(model_filename, model)
 			
-		return model
+		return model, config
 	else:
-		return None
+		return None, None
 
 def build_model(config):
 	vocab_size = 			config.vocab_size
@@ -99,7 +99,7 @@ def build_model(config):
 	assert isinstance(ndim_audio_features, int)
 	assert isinstance(ndim_h, int)
 	assert isinstance(ndim_dense, int)
-	assert isinstance(kernel_size, tuple)
+	assert isinstance(kernel_size, (tuple, list))
 	assert isinstance(num_conv_layers, int)
 	assert isinstance(dropout, float)
 	assert isinstance(weightnorm, bool)

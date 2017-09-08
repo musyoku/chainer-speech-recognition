@@ -3,6 +3,19 @@ import sys
 class Object(object):
 	pass
 
+def to_object(d):
+	obj = Object()
+	_set(obj, d)
+	return obj
+
+def _set(obj, d):
+	for key in d:
+		value = d[key]
+		if isinstance(value, dict):
+			_set(getattr(obj, key), value)
+		else:
+			setattr(obj, key, value)
+
 def to_dict(obj):
 	d = {}
 	for key in dir(obj):
