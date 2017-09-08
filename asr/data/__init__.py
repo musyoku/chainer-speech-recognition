@@ -1,2 +1,1 @@
-from .dataset import AugmentationOption
-from .loader import Loader
+from .loader import Loader, AugmentationOption

@@ -11,19 +11,21 @@ class Processor():
 		assert window_func in ["hanning", "hamming"]
 		self.sampling_rate = sampling_rate
 		self.frame_width = frame_width
-		self..sampling_rate = sampling_rate
-		self..frame_width = frame_width
-		self..frame_shift = frame_shift
-		self..num_fft = int(sampling_rate * frame_width)
-		self..num_mel_filters = num_mel_filters
+		self.sampling_rate = sampling_rate
+		self.frame_width = frame_width
+		self.frame_shift = frame_shift
+		self.num_fft = int(sampling_rate * frame_width)
+		self.num_mel_filters = num_mel_filters
 
 		if window_func == "hanning":
-			self..window_func = lambda x:np.hanning(x)
+			self.window_func = lambda x:np.hanning(x)
 		elif winfunc == "hamming":
-			self..window_func = lambda x:np.hamming(x)
+			self.window_func = lambda x:np.hamming(x)
 
-		self..using_delta = using_delta
-		self..using_delta_delta = using_delta_delta
+		self.using_delta = using_delta
+		self.using_delta_delta = using_delta_delta
+
+		self.fbank = fft.get_filterbanks(nfft=self.num_fft, nfilt=num_mel_filters, samplerate=sampling_rate)
 
 	def generate_signal_transcription_pairs(self, trn_path, audio, sampling_rate):
 		batch = []
@@ -60,7 +62,7 @@ class Processor():
 				batch.append((signal, sentence))
 		return batch
 
-	def extract_batch_features(self, batch, augmentation=None, apply_cmn=False, fbank=None):
+	def extract_batch_features(self, batch, augmentation=None, apply_cmn=False):
 		max_feature_length = 0
 		max_sentence_length = 0
 		audio_features = []
@@ -84,7 +86,7 @@ class Processor():
 				log_specgram = np.log(specgram)
 				specgram = np.exp(np.log(specgram) - np.mean(log_specgram, axis=0))
 
-			logmel = fft.compute_logmel(specgram, self.sampling_rate, fbank=fbank, nfft=self.num_fft, winlen=self.frame_width, winstep=self.frame_shift, nfilt=self.num_mel_filters, winfunc=self.window_func)
+			logmel = fft.compute_logmel(specgram, self.sampling_rate, fbank=self.fbank, nfft=self.num_fft, winlen=self.frame_width, winstep=self.frame_shift, nfilt=self.num_mel_filters, winfunc=self.window_func)
 			logmel, delta, delta_delta = fft.compute_deltas(logmel)
 
 			logmel = logmel.T

@@ -8,10 +8,10 @@ import numpy as np
 import chainer.functions as F
 from chainer import cuda
 from multiprocessing import Process, Queue
-from model import load_model, save_model, build_model, save_config
+from model import load_model, save_model, build_model, save_config, configure
 from args import args
 from asr.error import compute_minibatch_error
-from asr.dataset import Dataset, AugmentationOption
+from asr.data import AugmentationOption, Loader
 from asr.utils import printb, printr, printc, bold
 from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer, set_learning_rate
 from asr.vocab import get_unigram_ids, ID_BLANK
@@ -24,37 +24,13 @@ def formatted_error(error_values):
 		errors.append("%.2f" % error)
 	return errors
 
-def preloading_loop(dataset, augmentation, num_load, queue):
+def preloading_loop(loader, augmentation, num_load, queue):
 	# print("preloading started.")
 	np.random.seed(int(binascii.hexlify(os.urandom(4)), 16))
 	for i in range(num_load):
-		queue.put(dataset.sample_minibatch(augmentation=augmentation, gpu=False))
+		queue.put(loader.sample_minibatch(augmentation=augmentation, gpu=False))
 	# print("preloading done.")
 	return queue
-
-def configure():
-	sampling_rate = 16000
-	frame_width = 0.032
-	config = chainer.global_config
-	config.sampling_rate = sampling_rate
-	config.frame_width = frame_width
-	config.frame_shift = 0.01
-	config.num_fft = int(sampling_rate * frame_width)
-	config.num_mel_filters = 40
-	config.window_func = lambda x:np.hanning(x)
-	config.using_delta = True
-	config.using_delta_delta = True
-	config.bucket_split_sec = 0.5
-	config.ndim_audio_features = args.ndim_audio_features
-	config.ndim_h = args.ndim_h
-	config.ndim_dense = args.ndim_dense
-	config.num_conv_layers = args.num_conv_layers
-	config.kernel_size = (3, 5)
-	config.dropout = args.dropout
-	config.weightnorm = args.weightnorm
-	config.wgain = args.wgain
-	config.architecture = args.architecture
-	return config
 
 def main():
 	assert args.dataset_path is not None
@@ -94,8 +70,28 @@ def main():
 	batchsizes_train = [128] * 30
 	batchsizes_dev = [size * 3 for size in batchsizes_train]
 
-	dataset = Dataset(args.dataset_path, batchsizes_train, batchsizes_dev, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
-		buckets_cache_size=0, apply_cmn=args.apply_cmn)
+	# データセットの読み込み
+	loader = Loader(
+		data_path=args.dataset_path, 				# バケツ変換済みのデータへのパス
+		batchsizes_train=batchsizes_train, 			# 学習時のバッチサイズ
+		batchsizes_dev=batchsizes_dev, 				# 評価時のバッチサイズ
+		buckets_limit=args.buckets_limit, 			# 用いるバケツの制限
+		bucket_split_sec=0.5,						# バケツに区切る間隔
+		buckets_cache_size=1000, 					# ディスクから読み込んだデータをメモリにキャッシュする個数
+		vocab_token_to_id=vocab_token_ids,			# ユニグラム文字をIDに変換する辞書
+		dev_split=0.01,								# データの何％を評価に用いるか
+		seed=0,										# シード
+		id_blank=ID_BLANK,							# ブランクのID
+		apply_cmn=args.apply_cmn,					# ケプストラム平均正規化を使うかどうか。データセットに合わせる必要がある。
+		global_normalization=True,					# データ全体の平均分散を使って個別のデータの正規化をするかどうか
+		sampling_rate=config.sampling_rate,			# サンプリングレート
+		frame_width=config.frame_width,				# フレーム幅
+		frame_shift=config.frame_shift,				# フレーム感覚
+		num_mel_filters=config.num_mel_filters,		# フィルタバンクの数
+		window_func=config.window_func,				# 窓関数
+		using_delta=config.using_delta,				# Δ特徴量
+		using_delta_delta=config.using_delta_delta	# ΔΔ特徴量
+	)
 
 	augmentation = AugmentationOption()
 	if args.augmentation:
@@ -106,10 +102,7 @@ def main():
 	# モデル
 	model = load_model(model_filename, config_filename)
 	if model is None:
-		model = build_model(vocab_size=vocab_size, ndim_audio_features=config.ndim_audio_features, 
-		 ndim_h=config.ndim_h, ndim_dense=config.ndim_dense, num_conv_layers=config.num_conv_layers,
-		 kernel_size=(3, 5), dropout=config.dropout, weightnorm=config.weightnorm, wgain=config.wgain,
-		 num_mel_filters=config.num_mel_filters, architecture=config.architecture)
+		model = build_model(config)
 
 	if args.gpu_device >= 0:
 		cuda.get_device(args.gpu_device).use()
@@ -138,7 +131,7 @@ def main():
 	print("Run '{}' to update training environment.".format(bold("kill -USR1 {}".format(pid))))
 
 	# ログ
-	dataset.dump()
+	loader.dump()
 	env.dump()
 
 	# optimizer
@@ -151,9 +144,9 @@ def main():
 
 	# バッチサイズの調整
 	print("Searching for the best batch size ...")
-	batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
-	for _ in range(50):
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_train:
+	batch_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
+	for _ in range(30):
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id in batch_train:
 			try:
 				with chainer.using_config("train", True):
 					loss = F.connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
@@ -161,18 +154,19 @@ def main():
 				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
 					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id] - 16, 4)
 					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
+			break
 	batchsizes_dev = [size * 3 for size in batchsizes_train]
 			
 	# マルチプロセスでデータの先読み
-	num_preloads = 30
-	queue = preloading_loop(dataset, augmentation, num_preloads, Queue())
+	num_preloads = 50
+	queue = preloading_loop(loader, augmentation, num_preloads, Queue())
 	preloading_process = None
 
 	# 学習
 	printb("[Training]")
 	epochs = Iteration(args.epochs)
 	report = Report(log_filename)
-	total_iterations_train = dataset.get_total_training_iterations()
+	total_iterations_train = loader.get_total_training_iterations()
 
 	for epoch in epochs:
 		sum_loss = 0
@@ -188,7 +182,7 @@ def main():
 				preloading_process.join()
 
 			queue = Queue()
-			preloading_process = Process(target=preloading_loop, args=(dataset, augmentation, num_preloads, queue))
+			preloading_process = Process(target=preloading_loop, args=(loader, augmentation, num_preloads, queue))
 			preloading_process.start()
 
 			for batch_idx, data in enumerate(minibatch_list):
@@ -228,8 +222,8 @@ def main():
 						batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
 						batchsizes_dev = [size * 3 for size in batchsizes_train]
 						print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
-						dataset.set_batchsizes_train(batchsizes_train)
-						dataset.set_batchsizes_dev(batchsizes_dev)
+						loader.set_batchsizes_train(batchsizes_train)
+						loader.set_batchsizes_dev(batchsizes_dev)
 						break	# 最初からやり直す
 
 			current_iteration += len(minibatch_list)
@@ -237,11 +231,11 @@ def main():
 		save_model(os.path.join(args.working_directory, "model.hdf5"), model)
 
 		report("Epoch {}".format(epoch))
-		report(dataset.get_statistics())
+		report(loader.get_statistics())
 
 		# ノイズ無しデータでバリデーション
-		batch_dev = dataset.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
-		buckets_errors = [[] for i in range(dataset.get_num_buckets())]
+		batch_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
+		buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
 		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
 

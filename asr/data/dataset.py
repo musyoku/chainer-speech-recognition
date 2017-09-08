@@ -43,26 +43,6 @@ class Dataset():
 		self.apply_cmn = apply_cmn
 		self.global_normalization = global_normalization
 
-		self.reader = BucketsReader(data_path, buckets_limit, buckets_cache_size, dev_split, seed)
-
-		mean_filename = os.path.join(data_path, "mean.npy")
-		std_filename = os.path.join(data_path, "std.npy")
-
-		try:
-			if global_normalization:
-				if os.path.isfile(mean_filename) == False:
-					raise Exception()
-				if os.path.isfile(std_filename) == False:
-					raise Exception()
-		except:
-			raise Exception("Run preprocess/buckets.py before starting training.")
-
-		self.mean = np.load(mean_filename)[None, ...].astype(np.float32)
-		self.std = np.load(std_filename)[None, ...].astype(np.float32)
-
-		config = chainer.config
-		self.fbank = fft.get_filterbanks(nfft=config.num_fft, nfilt=config.num_mel_filters, samplerate=config.sampling_rate)
-
 	def set_batchsizes_train(self, batchsizes):
 		self.batchsizes_train = batchsizes
 
@@ -75,20 +55,11 @@ class Dataset():
 	def get_development_batch_iterator(self, batchsizes, augmentation=None, gpu=True):
 		return DevelopmentBatchIterator(self, batchsizes, augmentation, gpu)
 
-	def get_total_training_iterations(self):
-		return self.reader.calculate_total_training_iterations_with_batchsizes(self.batchsizes_train)
-
-	def get_total_dev_iterations(self):
-		return self.reader.calculate_total_dev_iterations_with_batchsizes(self.batchsizes_dev)
-
-	def get_num_buckets(self):
-		return self.reader.get_num_buckets()
-
 	def features_to_minibatch(self, processor, features, sentences, max_feature_length, max_sentence_length, gpu=True):
 		return processor.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu)
 
 	def extract_batch_features(self, processor, batch, augmentation=None):
-		return processor.extract_batch_features(batch, augmentation, self.apply_cmn, self.fbank)
+		return processor.extract_batch_features(batch, augmentation, self.apply_cmn)
 
 	def sample_minibatch(self, processor, augmentation=None, gpu=True):
 		batch, bucket_idx, group_idx = self.reader.sample_minibatch(self.batchsizes_train)

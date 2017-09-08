@@ -20,7 +20,7 @@ class Configuration():
 		self.ndim_dense = 256
 		self.num_conv_layers = 5
 		self.kernel_size = (3, 5)
-		self.dropout = False
+		self.dropout = 0
 		self.weightnorm = False
 		self.wgain = 1
 		self.architecture = "zhang"
@@ -82,7 +82,31 @@ def load_model(model_filename, config_filename):
 	else:
 		return None
 
-def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, kernel_size=(3, 5), num_conv_layers=4, dropout=0, weightnorm=False, wgain=1, num_mel_filters=40, architecture="zhang"):
+def build_model(config):
+	vocab_size = 			config.vocab_size
+	ndim_audio_features = 	config.ndim_audio_features
+	ndim_h = 				config.ndim_h
+	ndim_dense = 			config.ndim_dense
+	kernel_size = 			config.kernel_size
+	num_conv_layers = 		config.num_conv_layers
+	dropout = 				config.dropout
+	weightnorm = 			config.weightnorm
+	wgain = 				config.wgain
+	num_mel_filters = 		config.num_mel_filters
+	architecture = 			config.architecture
+
+	assert isinstance(vocab_size, int)
+	assert isinstance(ndim_audio_features, int)
+	assert isinstance(ndim_h, int)
+	assert isinstance(ndim_dense, int)
+	assert isinstance(kernel_size, tuple)
+	assert isinstance(num_conv_layers, int)
+	assert isinstance(dropout, float)
+	assert isinstance(weightnorm, bool)
+	assert isinstance(wgain, (int, float))
+	assert isinstance(num_mel_filters, int)
+	assert isinstance(architecture, str)
+
 	model = AcousticModel()
 	pad = kernel_size[1] - 1
 	kernel_height = int(math.ceil((num_mel_filters - 2) / 3))
