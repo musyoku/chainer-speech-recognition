@@ -8,11 +8,11 @@ import numpy as np
 import chainer.functions as F
 from tqdm import tqdm
 from chainer import cuda
-from model import load_model, save_model, build_model, save_config
+from model import load_model, save_model, build_model, save_config, configure
 from args import args
 from asr.error import compute_minibatch_error
 from asr.dataset import Dataset, AugmentationOption
-from asr.utils import stdout, printb, printr, bold, printc
+from asr.utils import printb, printr, printc, bold
 from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer, set_learning_rate
 from asr.vocab import get_unigram_ids, ID_BLANK
 from asr.training import Environment, Iteration
@@ -23,30 +23,6 @@ def formatted_error(error_values):
 	for error in error_values:
 		errors.append("%.2f" % error)
 	return errors
-
-def configure():
-	sampling_rate = 16000
-	frame_width = 0.032
-	config = chainer.global_config
-	config.sampling_rate = sampling_rate
-	config.frame_width = frame_width
-	config.frame_shift = 0.01
-	config.num_fft = int(sampling_rate * frame_width)
-	config.num_mel_filters = 40
-	config.window_func = lambda x:np.hanning(x)
-	config.using_delta = True
-	config.using_delta_delta = True
-	config.bucket_split_sec = 0.5
-	config.ndim_audio_features = args.ndim_audio_features
-	config.ndim_h = args.ndim_h
-	config.ndim_dense = args.ndim_dense
-	config.num_conv_layers = args.num_conv_layers
-	config.kernel_size = (3, 5)
-	config.dropout = args.dropout
-	config.weightnorm = args.weightnorm
-	config.wgain = args.wgain
-	config.architecture = args.architecture
-	return config
 
 def main():
 	assert args.dataset_path is not None
@@ -70,6 +46,15 @@ def main():
 	# 設定
 	config = configure()
 	config.vocab_size = vocab_size
+	config.ndim_audio_features = args.ndim_audio_features
+	config.ndim_h = args.ndim_h
+	config.ndim_dense = args.ndim_dense
+	config.num_conv_layers = args.num_conv_layers
+	config.kernel_size = (3, 5)
+	config.dropout = args.dropout
+	config.weightnorm = args.weightnorm
+	config.wgain = args.wgain
+	config.architecture = args.architecture
 	save_config(config_filename, config)
 
 	# バケツごとのミニバッチサイズ
@@ -92,7 +77,7 @@ def main():
 		model = build_model(vocab_size=vocab_size, ndim_audio_features=config.ndim_audio_features, 
 		 ndim_h=config.ndim_h, ndim_dense=config.ndim_dense, num_conv_layers=config.num_conv_layers,
 		 kernel_size=(3, 5), dropout=config.dropout, weightnorm=config.weightnorm, wgain=config.wgain,
-		 num_mel_filters=config.num_mel_filters, architecture=config.architecture)
+		 num_mel_filters=chainer.config.num_mel_filters, architecture=config.architecture)
 
 	if args.gpu_device >= 0:
 		cuda.get_device(args.gpu_device).use()
@@ -134,24 +119,17 @@ def main():
 
 	# バッチサイズの調整
 	print("Searching for the best batch size ...")
-	itr = 0
 	batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
-	for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_train:
-		try:
-			with chainer.using_config("train", True):
-				y_batch = model(x_batch)
-				loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
-		except Exception as e:
-			printr("")
-			printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
-			if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
-				batchsizes_train[bucket_id] -= 16
-				batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
-				batchsizes_dev = [size * 3 for size in batchsizes_train]
-				print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
-		itr += 1
-		if itr > 50:
-			break
+	for _ in range(50):
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_train:
+			try:
+				with chainer.using_config("train", True):
+					loss = F.connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
+			except Exception as e:
+				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
+					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id] - 16, 4)
+					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
+	batchsizes_dev = [size * 3 for size in batchsizes_train]
 
 	# 学習
 	printb("[Training]")
@@ -226,7 +204,7 @@ def main():
 			"CER": formatted_error(avg_errors_dev),
 			"lr": get_learning_rate(optimizer)
 		}
-		epochs.log(log)
+		epochs.console_log(log)
 		report(log)
 
 		# 学習率の減衰

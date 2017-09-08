@@ -44,7 +44,7 @@ class Iteration():
 	def log_progress(self, string):
 		printr(string)
 
-	def log(self, d):
+	def console_log(self, d):
 		sys.stdout.write(stdout.CLEAR)
 		sys.stdout.write(stdout.MOVE)
 		sys.stdout.write(stdout.CLEAR)

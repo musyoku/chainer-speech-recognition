@@ -8,7 +8,6 @@ import scipy.io.wavfile as wavfile
 import pickle
 import acoustics
 from chainer import cuda
-from . import processing
 from .reader import BucketsReader
 from .iterator import TrainingBatchIterator, DevelopmentBatchIterator
 from .. import fft
@@ -85,16 +84,16 @@ class Dataset():
 	def get_num_buckets(self):
 		return self.reader.get_num_buckets()
 
-	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
-		return processing.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu)
+	def features_to_minibatch(self, processor, features, sentences, max_feature_length, max_sentence_length, gpu=True):
+		return processor.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, self.mean, self.std, gpu)
 
-	def extract_batch_features(self, batch, augmentation=None):
-		return processing.extract_batch_features(batch, augmentation, self.apply_cmn, self.fbank)
+	def extract_batch_features(self, processor, batch, augmentation=None):
+		return processor.extract_batch_features(batch, augmentation, self.apply_cmn, self.fbank)
 
-	def sample_minibatch(self, augmentation=None, gpu=True):
+	def sample_minibatch(self, processor, augmentation=None, gpu=True):
 		batch, bucket_idx, group_idx = self.reader.sample_minibatch(self.batchsizes_train)
-		audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=augmentation)
-		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.features_to_minibatch(audio_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
+		audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(processor, batch, augmentation=augmentation)
+		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.features_to_minibatch(processor, audio_features, sentences, max_feature_length, max_sentence_length, gpu=gpu)
 
 		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx
 

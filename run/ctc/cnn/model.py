@@ -9,7 +9,32 @@ from six.moves import xrange
 from chainer import Chain, serializers, initializers, variable, functions
 sys.path.append(os.path.join("..", "..", ".."))
 from asr.stream import Stream
+from asr.utils import to_dict
 import asr.stream as nn
+
+class Configuration():
+	def __init__(self):
+		self.vocab_size = -1
+		self.ndim_audio_features = 40
+		self.ndim_h = 128
+		self.ndim_dense = 256
+		self.num_conv_layers = 5
+		self.kernel_size = (3, 5)
+		self.dropout = False
+		self.weightnorm = False
+		self.wgain = 1
+		self.architecture = "zhang"
+		self.sampling_rate = 16000
+		self.frame_width = 0.032
+		self.frame_shift = 0.01
+		self.num_mel_filters = 40
+		self.window_func = "hanning"
+		self.using_delta = True
+		self.using_delta_delta = True
+		self.bucket_split_sec = 0.5
+
+def configure():
+	return Configuration()
 
 def save_model(filename, model):
 	tmp_filename = str(uuid.uuid4())
@@ -19,21 +44,14 @@ def save_model(filename, model):
 	os.rename(tmp_filename, filename)
 
 def save_config(filename, config, overwrite=False):
+	assert isinstance(config, Configuration)
+	assert config.vocab_size > 0
+
 	if os.path.isfile(filename) and overwrite is False:
 		return
 
-	params = {
-		"vocab_size": config.vocab_size,
-		"ndim_dense": config.ndim_dense,
-		"ndim_h": config.ndim_h,
-		"ndim_audio_features": config.ndim_audio_features,
-		"kernel_size": config.kernel_size,
-		"dropout": config.dropout,
-		"weightnorm": config.weightnorm,
-		"architecture": config.architecture,
-		"num_conv_layers": config.num_conv_layers,
-		"wgain": config.wgain,
-	}
+	params = to_dict(config)
+	
 	with open(filename, "w") as f:
 		json.dump(params, f, indent=4, sort_keys=True, separators=(',', ': '))
 
