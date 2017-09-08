@@ -7,8 +7,7 @@ import chainer
 import numpy as np
 import chainer.functions as F
 from tqdm import tqdm
-from chainer import cuda, serializers
-from multiprocessing import Process, Queue
+from chainer import cuda
 from model import load_model, save_model, build_model, save_config
 from args import args
 from asr.error import compute_minibatch_error
@@ -80,8 +79,8 @@ def main():
 	save_config(config_filename, config)
 
 	# バケツごとのミニバッチサイズ
-	# GTX 1080 1台基準
-	batchsizes_train = [32, 32, 32, 24, 16, 16, 12, 12, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
+	# 自動的に調整される
+	batchsizes_train = [128] * 30
 	batchsizes_dev = [size * 3 for size in batchsizes_train]
 
 	dataset = Dataset(args.dataset_path, batchsizes_train, batchsizes_dev, args.buckets_limit, token_ids=vocab_token_ids, id_blank=ID_BLANK, 
@@ -127,6 +126,11 @@ def main():
 	pid = os.getpid()
 	print("Run '{}' to update training environment.".format(bold("kill -USR1 {}".format(pid))))
 
+	# 並列でデータ読み込み
+	num_preloads = 30
+	queue = preloading_loop(dataset, augmentation, num_preloads, Queue())
+	preloading_process = None
+
 	# ログ
 	dataset.dump()
 	env.dump()
@@ -138,7 +142,6 @@ def main():
 		optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
 	if args.weight_decay > 0:
 		optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
-
 
 	# 学習
 	printb("[Training]")
@@ -152,9 +155,7 @@ def main():
 		with chainer.using_config("train", True):
 			batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
 
-			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in tqdm(batch_train, desc="training", total=batch_train.get_total_iterations()):
-
-				continue
+			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in tqdm(batch_train, total=batch_train.get_total_iterations()):
 
 				try:
 					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
@@ -166,7 +167,8 @@ def main():
 					# NaN
 					loss_value = float(loss.data)
 					if loss_value != loss_value:
-						raise Exception("Encountered NaN when computing loss.")
+						printc("Encountered NaN when computing loss.", color="red")
+						continue
 
 					# 更新
 					optimizer.update(lossfun=lambda: loss)
@@ -176,6 +178,11 @@ def main():
 				except Exception as e:
 					printr("")
 					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
+					if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
+						batchsizes_train[bucket_id] -= 16
+						batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
+						batchsizes_dev = [size * 3 for size in batchsizes_train]
+						print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
 
 		save_model(os.path.join(args.working_directory, "model.hdf5"), model)
 

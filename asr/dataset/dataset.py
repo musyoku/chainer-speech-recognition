@@ -64,6 +64,12 @@ class Dataset():
 		config = chainer.config
 		self.fbank = fft.get_filterbanks(nfft=config.num_fft, nfilt=config.num_mel_filters, samplerate=config.sampling_rate)
 
+	def set_batchsizes_train(self, batchsizes):
+		self.batchsizes_train = batchsizes
+
+	def set_batchsizes_dev(self, batchsizes):
+		self.batchsizes_dev = batchsizes
+
 	def get_training_batch_iterator(self, batchsizes, augmentation=None, gpu=True):
 		return TrainingBatchIterator(self, batchsizes, augmentation, gpu)
 
