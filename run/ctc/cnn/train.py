@@ -24,12 +24,6 @@ def formatted_error(error_values):
 		errors.append("%.2f" % error)
 	return errors
 
-def preloading_loop(dataset, augmentation, num_load, queue):
-	np.random.seed(int(binascii.hexlify(os.urandom(4)), 16))
-	for i in range(num_load):
-		queue.put(dataset.get_minibatch(option=augmentation, gpu=False))
-	return queue
-
 def configure():
 	sampling_rate = 16000
 	frame_width = 0.032
@@ -126,11 +120,6 @@ def main():
 	pid = os.getpid()
 	print("Run '{}' to update training environment.".format(bold("kill -USR1 {}".format(pid))))
 
-	# 並列でデータ読み込み
-	num_preloads = 30
-	queue = preloading_loop(dataset, augmentation, num_preloads, Queue())
-	preloading_process = None
-
 	# ログ
 	dataset.dump()
 	env.dump()
@@ -143,6 +132,27 @@ def main():
 	if args.weight_decay > 0:
 		optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
 
+	# バッチサイズの調整
+	print("Searching for the best batch size ...")
+	itr = 0
+	batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
+	for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_train:
+		try:
+			with chainer.using_config("train", True):
+				y_batch = model(x_batch)
+				loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+		except Exception as e:
+			printr("")
+			printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
+			if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
+				batchsizes_train[bucket_id] -= 16
+				batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
+				batchsizes_dev = [size * 3 for size in batchsizes_train]
+				print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
+		itr += 1
+		if itr > 50:
+			break
+			
 	# 学習
 	printb("[Training]")
 	epochs = Iteration(args.epochs)

@@ -25,9 +25,11 @@ def formatted_error(error_values):
 	return errors
 
 def preloading_loop(dataset, augmentation, num_load, queue):
+	# print("preloading started.")
 	np.random.seed(int(binascii.hexlify(os.urandom(4)), 16))
 	for i in range(num_load):
 		queue.put(dataset.sample_minibatch(augmentation=augmentation, gpu=False))
+	# print("preloading done.")
 	return queue
 
 def configure():
@@ -168,11 +170,12 @@ def main():
 	printb("[Training]")
 	epochs = Iteration(args.epochs)
 	report = Report(log_filename)
+	total_iterations_train = dataset.get_total_training_iterations()
+
 	for epoch in epochs:
 		sum_loss = 0
 
 		# パラメータの更新
-		total_iterations_train = dataset.get_total_training_iterations()
 		current_iteration = 0
 		while total_iterations_train > current_iteration:
 			minibatch_list = []
@@ -226,6 +229,8 @@ def main():
 						dataset.set_batchsizes_train(batchsizes_train)
 						dataset.set_batchsizes_dev(batchsizes_dev)
 						break	# 最初からやり直す
+
+			current_iteration += len(minibatch_list)
 
 		save_model(os.path.join(args.working_directory, "model.hdf5"), model)
 
