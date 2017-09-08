@@ -152,7 +152,7 @@ def main():
 		itr += 1
 		if itr > 50:
 			break
-			
+
 	# 学習
 	printb("[Training]")
 	epochs = Iteration(args.epochs)
@@ -162,12 +162,12 @@ def main():
 		sum_loss = 0
 
 		# パラメータの更新
-		with chainer.using_config("train", True):
-			batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
+		batch_train = dataset.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
 
-			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in tqdm(batch_train, total=batch_train.get_total_iterations()):
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in tqdm(batch_train, total=batch_train.get_total_iterations()):
 
-				try:
+			try:
+				with chainer.using_config("train", True):
 					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
 
 					# 誤差の計算
@@ -185,54 +185,52 @@ def main():
 					
 					sum_loss += loss_value
 
-				except Exception as e:
-					printr("")
-					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
-					if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
-						batchsizes_train[bucket_id] -= 16
-						batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
-						batchsizes_dev = [size * 3 for size in batchsizes_train]
-						print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
+			except Exception as e:
+				printr("")
+				printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
+				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
+					batchsizes_train[bucket_id] -= 16
+					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
+					batchsizes_dev = [size * 3 for size in batchsizes_train]
+					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
 
 		save_model(os.path.join(args.working_directory, "model.hdf5"), model)
 
 		report("Epoch {}".format(epoch))
 		report(dataset.get_statistics())
 
-		# バリデーション
-		with chainer.using_config("train", False):
-			
-			# ノイズ無しデータでバリデーション
-			batch_dev = dataset.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
-			buckets_errors = [[] for i in range(dataset.get_num_buckets())]
+		# ノイズ無しデータでバリデーション
+		batch_dev = dataset.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
+		buckets_errors = [[] for i in range(dataset.get_num_buckets())]
 
-			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
 
-				try:
+			try:
+				with chainer.using_config("train", False):
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
 					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
 					buckets_errors[bucket_id].append(error)
 
-				except Exception as e:
-					printr("")
-					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
-					
-			# printr("")
-			avg_errors_dev = []
-			for errors in buckets_errors:
-				avg_errors_dev.append(sum(errors) / len(errors) * 100)
+			except Exception as e:
+				printr("")
+				printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
+				
+		# printr("")
+		avg_errors_dev = []
+		for errors in buckets_errors:
+			avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-			info = {
-				"loss": sum_loss / batch_train.get_total_iterations(),
-				"CER": formatted_error(avg_errors_dev),
-				"lr": get_learning_rate(optimizer)
-			}
-			epochs.log(info)
-			report(info)
+		log = {
+			"loss": sum_loss / batch_train.get_total_iterations(),
+			"CER": formatted_error(avg_errors_dev),
+			"lr": get_learning_rate(optimizer)
+		}
+		epochs.log(log)
+		report(log)
 
-			# 学習率の減衰
-			decay_learning_rate(optimizer, env.lr_decay, env.final_learning_rate)
+		# 学習率の減衰
+		decay_learning_rate(optimizer, env.lr_decay, env.final_learning_rate)
 
 if __name__ == "__main__":
 	main()

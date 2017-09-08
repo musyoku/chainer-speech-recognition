@@ -79,12 +79,43 @@ class DevelopmentBatchIterator():
 		return self
 
 	def __next__(self):
+		buckets_indices = self.dataset.reader.buckets_indices_dev
+		if self.bucket_id >= len(buckets_indices):
+			raise StopIteration()
+
+		while True:
+			bucket_id = self.bucket_id
+			piece_id = self.piece_id
+			batch = self._next()
+			if batch is not None:
+				break
+
+			self.piece_id += 1
+			self.pos = 0
+
+			if self.piece_id >= len(buckets_indices[bucket_id]):
+				self.piece_id = 0
+				self.bucket_id += 1
+
+			if self.bucket_id >= len(buckets_indices):
+				raise StopIteration()
+
+		audio_features, sentences, max_feature_length, max_sentence_length = self.dataset.extract_batch_features(batch, augmentation=self.augmentation)
+		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.dataset.features_to_minibatch(audio_features, sentences, max_feature_length, max_sentence_length, gpu=self.gpu)
+
+		if self.piece_id >= len(buckets_indices[bucket_id]):
+			self.piece_id = 0
+			self.bucket_id += 1
+
+		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id
+
+	def _next(self):
 		bucket_id = self.bucket_id
 		piece_id = self.piece_id
 		buckets_indices = self.dataset.reader.buckets_indices_dev
 
-		if bucket_id >= len(buckets_indices):
-			raise StopIteration()
+		assert len(buckets_indices) > bucket_id
+		assert len(buckets_indices[bucket_id]) > piece_id
 
 		signal_list = self.dataset.reader.get_signals_by_bucket_and_piece(bucket_id, piece_id)
 		sentence_list = self.dataset.reader.get_sentences_by_bucket_and_piece(bucket_id, piece_id)
@@ -97,10 +128,7 @@ class DevelopmentBatchIterator():
 		indices = indices_dev[self.pos:self.pos + batchsize]
 
 		if len(indices) == 0:
-			import pdb
-			pdb.set_trace()
-
-		assert len(indices) > 0
+			return None
 
 		batch = []
 		for data_idx in indices:
@@ -108,19 +136,13 @@ class DevelopmentBatchIterator():
 			sentence = sentence_list[data_idx]
 			batch.append((signal, sentence))
 
-		audio_features, sentences, max_feature_length, max_sentence_length = self.dataset.extract_batch_features(batch, augmentation=self.augmentation)
-		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.dataset.features_to_minibatch(audio_features, sentences, max_feature_length, max_sentence_length, gpu=self.gpu)
-
 		self.pos += batchsize
+
 		if self.pos >= len(indices_dev):
 			self.piece_id += 1
 			self.pos = 0
 
-		if self.piece_id >= len(buckets_indices[bucket_id]):
-			self.piece_id = 0
-			self.bucket_id += 1
-
-		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id
+		return batch
 
 	next = __next__  # Python 2
 

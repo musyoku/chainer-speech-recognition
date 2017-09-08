@@ -237,40 +237,38 @@ def main():
 		report("Epoch {}".format(epoch))
 		report(dataset.get_statistics())
 
-		# バリデーション
-		with chainer.using_config("train", False):
-			
-			# ノイズ無しデータでバリデーション
-			batch_dev = dataset.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
-			buckets_errors = [[] for i in range(dataset.get_num_buckets())]
+		# ノイズ無しデータでバリデーション
+		batch_dev = dataset.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
+		buckets_errors = [[] for i in range(dataset.get_num_buckets())]
 
-			for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
 
-				try:
+			try:
+				with chainer.using_config("train", False):
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
 					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
 					buckets_errors[bucket_id].append(error)
 
-				except Exception as e:
-					printr("")
-					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
-					
-			# printr("")
-			avg_errors_dev = []
-			for errors in buckets_errors:
-				avg_errors_dev.append(sum(errors) / len(errors) * 100)
+			except Exception as e:
+				printr("")
+				printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
+				
+		# printr("")
+		avg_errors_dev = []
+		for errors in buckets_errors:
+			avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-			info = {
-				"loss": sum_loss / batch_train.get_total_iterations(),
-				"CER": formatted_error(avg_errors_dev),
-				"lr": get_learning_rate(optimizer)
-			}
-			epochs.log(info)
-			report(info)
+		log = {
+			"loss": sum_loss / batch_train.get_total_iterations(),
+			"CER": formatted_error(avg_errors_dev),
+			"lr": get_learning_rate(optimizer)
+		}
+		epochs.log(log)
+		report(log)
 
-			# 学習率の減衰
-			decay_learning_rate(optimizer, env.lr_decay, env.final_learning_rate)
+		# 学習率の減衰
+		decay_learning_rate(optimizer, env.lr_decay, env.final_learning_rate)
 
 def _main():
 	assert args.dataset_path is not None
