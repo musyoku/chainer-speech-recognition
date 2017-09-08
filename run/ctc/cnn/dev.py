@@ -35,7 +35,7 @@ def main():
 
 	# バケツごとのミニバッチサイズ
 	# 自動的に調整される
-	batchsizes_dev = [256] * 30
+	batchsizes_dev = [64] * 30
 
 	# モデル
 	model, config = load_model(model_filename, config_filename)
@@ -80,22 +80,7 @@ def main():
 	# ログ
 	loader.dump()
 
-	# バッチサイズの調整
-	print("Searching for the best batch size ...")
-	batch_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
-	for _ in range(50):
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
-			try:
-				with chainer.using_config("train", False):
-					y_batch = model(x_batch)
-					y_batch = xp.argmax(y_batch.data, axis=2)
-			except Exception as e:
-				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
-					batchsizes_dev[bucket_id] = max(batchsizes_dev[bucket_id] - 16, 4)
-					print("new batchsize {} for bucket {}".format(batchsizes_dev[bucket_id], bucket_id + 1))
-			break
-
-
+	# モデルの評価
 	printb("[Evaluation]")
 	batch_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
 	buckets_errors = [[] for i in range(loader.get_num_buckets())]
@@ -103,7 +88,7 @@ def main():
 	for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
 
 		try:
-			with chainer.using_config("train", False):
+			with chainer.no_backprop_mode():
 				y_batch = model(x_batch, split_into_variables=False)
 				y_batch = xp.argmax(y_batch.data, axis=2)
 				error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)

@@ -1,3 +1,5 @@
+from ...utils import printr
+
 class Iterator():
 	def __init__(self, loader, batchsizes, augmentation=None, gpu=True):
 		self.loader = loader
@@ -7,6 +9,10 @@ class Iterator():
 		self.bucket_id = 0
 		self.pos = 0
 		self.total_itr = loader.get_total_iterations()
+
+	def reset(self, bucket_id):
+		self.pos = 0
+		self.bucket_id = bucket_id
 
 	def __iter__(self):
 		return self
@@ -35,8 +41,8 @@ class Iterator():
 
 	def _next(self):
 		bucket_id = self.bucket_id
-		buckets_signal = self.loader.reader.buckets_signal
-		buckets_sentence = self.loader.reader.buckets_sentence
+		buckets_signal = self.loader.reader.buckets_signal[bucket_id]
+		buckets_sentence = self.loader.reader.buckets_sentence[bucket_id]
 
 		assert len(buckets_signal) > bucket_id
 
@@ -49,14 +55,15 @@ class Iterator():
 
 		batch = []
 		for i in range(batchsize):
-			signal = buckets_signal[bucket_id][self.pos + i]
-			sentence = buckets_sentence[bucket_id][self.pos + i]
+			signal = buckets_signal[self.pos + i]
+			sentence = buckets_sentence[self.pos + i]
 			batch.append((signal, sentence))
 
 		self.pos += batchsize
 
 		if self.pos >= len(buckets_signal):
 			self.pos = 0
+			self.bucket_id += 1
 
 		return batch
 

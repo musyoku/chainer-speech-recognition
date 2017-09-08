@@ -170,7 +170,8 @@ class Processor():
 			bigram_batch[batch_idx, :t_length] = bigram_ids
 			t_length_batch.append(t_length)
 
-		x_batch = (x_batch - x_mean) / x_std
+		if x_mean is not None and x_std is not None:
+			x_batch = (x_batch - x_mean) / x_std
 
 		# GPU
 		if gpu:

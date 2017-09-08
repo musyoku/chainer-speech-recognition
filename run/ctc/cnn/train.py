@@ -201,7 +201,7 @@ def main():
 		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_dev:
 
 			try:
-				with chainer.using_config("train", False):
+				with chainer.no_backprop_mode():
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
 					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
