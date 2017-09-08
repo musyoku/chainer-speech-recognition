@@ -143,7 +143,7 @@ def main():
 	print("Searching for the best batch size ...")
 	batch_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
 	for _ in range(30):
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id in batch_train:
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_train:
 			try:
 				with chainer.using_config("train", True):
 					loss = F.connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
@@ -185,7 +185,7 @@ def main():
 			for batch_idx, data in enumerate(minibatch_list):
 				try:
 					with chainer.using_config("train", True):
-						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx = data
+						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id = data
 
 						if args.gpu_device >= 0:
 							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
@@ -234,7 +234,7 @@ def main():
 		batch_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
 		buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_dev:
 
 			try:
 				with chainer.using_config("train", False):

@@ -137,7 +137,7 @@ def main():
 	print("Searching for the best batch size ...")
 	batch_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
 	for _ in range(30):
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id in batch_train:
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_train:
 			try:
 				with chainer.using_config("train", True):
 					loss = F.connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
@@ -159,7 +159,7 @@ def main():
 		# パラメータの更新
 		batch_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
 
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id in tqdm(batch_train, total=batch_train.get_total_iterations()):
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in tqdm(batch_train, total=batch_train.get_total_iterations()):
 
 			try:
 				with chainer.using_config("train", True):
@@ -198,7 +198,7 @@ def main():
 		batch_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
 		buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id in batch_dev:
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_dev:
 
 			try:
 				with chainer.using_config("train", False):

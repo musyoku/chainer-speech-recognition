@@ -51,7 +51,7 @@ class Loader():
 
 	def sample_minibatch(self, augmentation=None, gpu=True):
 		# 生の音声信号を取得
-		batch, bucket_idx, group_idx = self.reader.sample_minibatch(self.batchsizes_train)
+		batch, bucket_idx, piece_id = self.reader.sample_minibatch(self.batchsizes_train)
 
 		# メルフィルタバンク出力を求める
 		audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=augmentation)
@@ -60,7 +60,7 @@ class Loader():
 		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.features_to_minibatch(audio_features, 
 			sentences, max_feature_length, max_sentence_length, gpu=gpu)
 
-		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx, group_idx
+		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_idx
 
 	def get_total_training_iterations(self):
 		return self.reader.calculate_total_training_iterations_with_batchsizes(self.batchsizes_train)

@@ -84,9 +84,9 @@ def main():
 
 	# バッチサイズの調整
 	print("Searching for the best batch size ...")
-	batch_dev = loader.get_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
+	batch_iter = loader.get_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
 	for _ in range(50):
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_iter:
 			try:
 				with chainer.using_config("train", False):
 					y_batch = model(x_batch)
@@ -99,10 +99,10 @@ def main():
 
 
 	printb("[Test]")
-	batch_dev = loader.get_development_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
+	batch_iter = loader.get_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
 	buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
-	for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, group_idx in batch_dev:
+	for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_iter:
 
 		try:
 			with chainer.using_config("train", False):

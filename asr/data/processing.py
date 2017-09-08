@@ -1,4 +1,4 @@
-import chainer, codecs
+import chainer, codecs, jaconv
 import numpy as np
 from chainer import cuda
 from .. import fft
@@ -104,6 +104,7 @@ class Processor():
 				continue
 
 			audio_features.append((logmel, delta, delta_delta))
+			sentence = jaconv.hira2kata(sentence) # 強制カタカナ変換
 			sentences.append(sentence)
 
 		assert max_feature_length > 0

@@ -38,6 +38,13 @@ class Loader():
 		except:
 			raise Exception("Run preprocess/buckets.py before starting training.")
 
+	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
+		return self.processor.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, 
+			self.id_blank, self.mean, self.std, gpu)
+
+	def extract_batch_features(self, batch, augmentation=None):
+		return self.processor.extract_batch_features(batch, augmentation, self.apply_cmn)
+		
 	def dump(self):
 		self.reader.dump()
 
@@ -46,3 +53,6 @@ class Loader():
 
 	def get_batch_iterator(self, batchsizes, augmentation=None, gpu=True):
 		return iterators.audio.Iterator(self, batchsizes, augmentation, gpu)
+
+	def get_num_buckets(self):
+		return self.reader.get_num_buckets()

@@ -105,3 +105,6 @@ class Reader():
 			total += num_data
 			print("{}	{:>4}	{:>6.3f}".format(bucket_id + 1, num_data, self.bucket_split_sec * (bucket_id + 1)))
 		print("total	{:>4}		{} hour".format(total, int(self.total_min / 60)))
+
+	def get_num_buckets(self):
+		return len(self.buckets_signal)
