@@ -1,9 +1,46 @@
-import chainer
+import chainer, codecs
 import numpy as np
 from chainer import cuda
 from .. import fft
 from ..vocab import convert_sentence_to_unigram_tokens
+from ..utils import printb, printr, printc
 
+def generate_signal_transcription_pairs(trn_path, audio, sampling_rate, num_fft):
+	batch = []
+	with codecs.open(trn_path, "r", "utf-8") as f:
+		for data in f:
+			period_str, channel, sentence = data.split(":")
+			sentence = sentence.strip()
+			period = period_str.split("-")
+			start_sec, end_sec = float(period[0]), float(period[1])
+			start_frame = int(start_sec * sampling_rate)
+			end_frame = int(end_sec * sampling_rate)
+
+			assert start_frame <= len(audio)
+			assert end_frame <= len(audio)
+
+			signal = audio[start_frame:end_frame]
+
+			assert len(signal) == end_frame - start_frame
+			if len(signal) < num_fft * 3:
+				printr("")
+				print("{} skipped. (length={})".format(sentence, len(signal)))
+				continue
+
+			# channelに従って選択
+			if signal.ndim == 2:
+				if channel == "S":	# 両方に含まれる場合はL
+					signal = signal[:, 0]
+				elif channel == "L":
+					signal = signal[:, 0]
+				elif channel == "R":
+					signal = signal[:, 1]
+				else:
+					raise Exception()
+
+			batch.append((signal, sentence))
+	return batch
+	
 class Processor():
 
 	def __init__(self, sampling_rate=16000, frame_width=0.032, frame_shift=0.01, num_mel_filters=40, window_func="hanning",
@@ -26,41 +63,6 @@ class Processor():
 		self.using_delta_delta = using_delta_delta
 
 		self.fbank = fft.get_filterbanks(nfft=self.num_fft, nfilt=num_mel_filters, samplerate=sampling_rate)
-
-	def generate_signal_transcription_pairs(self, trn_path, audio, sampling_rate):
-		batch = []
-		with codecs.open(trn_path, "r", "utf-8") as f:
-			for data in f:
-				period_str, channel, sentence = data.split(":")
-				sentence = sentence.strip()
-				period = period_str.split("-")
-				start_sec, end_sec = float(period[0]), float(period[1])
-				start_frame = int(start_sec * sampling_rate)
-				end_frame = int(end_sec * sampling_rate)
-
-				assert start_frame <= len(audio)
-				assert end_frame <= len(audio)
-
-				signal = audio[start_frame:end_frame]
-
-				assert len(signal) == end_frame - start_frame
-				if len(signal) < self.num_fft * 3:
-					print("\r{}{} skipped. (length={})".format(stdout.CLEAR, sentence, len(signal)))
-					continue
-
-				# channelに従って選択
-				if signal.ndim == 2:
-					if channel == "S":	# 両方に含まれる場合はL
-						signal = signal[:, 0]
-					elif channel == "L":
-						signal = signal[:, 0]
-					elif channel == "R":
-						signal = signal[:, 1]
-					else:
-						raise Exception()
-
-				batch.append((signal, sentence))
-		return batch
 
 	def extract_batch_features(self, batch, augmentation=None, apply_cmn=False):
 		max_feature_length = 0

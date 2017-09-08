@@ -1,6 +1,8 @@
 import re, os, chainer, math, pickle
 import numpy as np
-from ..utils import printb
+import scipy.io.wavfile as wavfile
+from ..utils import printb, printr, printc
+from .processing import generate_signal_transcription_pairs
 
 def _get_bucket_index(signal, sampling_rate=16000, split_sec=0.5):
 	divider = sampling_rate * split_sec
@@ -207,10 +209,26 @@ class BucketsReader():
 	def get_num_buckets(self):
 		return len(self.buckets_signal)
 
-	def generate_buckets_from_raw_data(self, wav_dir, trn_dir, buckets_limit=None):
+class AudioReader():
+	def __init__(self, wav_directory_list, transcription_directory_list, buckets_limit=None, frame_width=0.032, bucket_split_sec=0.5):
+		self.wav_directory_list = wav_directory_list
+		self.transcription_directory_list = transcription_directory_list
+		self.buckets_limit = buckets_limit
+		self.frame_width = frame_width
+		self.bucket_split_sec = bucket_split_sec
+		self.buckets_signal = []
+		self.buckets_sentence = []
+		self.total_min = 0
+
+		for wav_dir, trn_dir in zip(wav_directory_list, transcription_directory_list):
+			buckets_signal, buckets_sentence, total_min = self.read(wav_dir, trn_dir)
+			self.buckets_signal += buckets_signal
+			self.buckets_sentence += buckets_sentence
+			self.total_min += total_min
+
+	def read(self, wav_dir, trn_dir):
 		buckets_signal = []
 		buckets_sentence = []
-		vocab = get_vocab()[0]
 		total_min = 0
 
 		def append_bucket(buckets, bucket_id, data):
@@ -219,9 +237,9 @@ class BucketsReader():
 					buckets.append([])
 			buckets[bucket_id].append(data)
 
-		def add_to_bukcet(signal, sentence):
-			bucket_id = _get_bucket_index(signal, self.sampling_rate, self.bucket_split_sec)
-			if buckets_limit and bucket_id >= buckets_limit:
+		def add_to_bukcet(signal, sentence, sampling_rate):
+			bucket_id = _get_bucket_index(signal, sampling_rate, self.bucket_split_sec)
+			if self.buckets_limit and bucket_id >= self.buckets_limit:
 				return bucket_id
 			append_bucket(buckets_signal, bucket_id, signal)
 			append_bucket(buckets_sentence, bucket_id, sentence)
@@ -240,9 +258,7 @@ class BucketsReader():
 
 		for data_id, wav_id in enumerate(wav_ids):
 			if wav_id not in trn_ids:
-				sys.stdout.write("\r")
-				sys.stdout.write(stdout.CLEAR)
-				print("%s.trn not found" % wav_id)
+				printr("%s.trn not found" % wav_id)
 				continue
 
 			wav_filename = "%s.wav" % wav_id
@@ -254,48 +270,31 @@ class BucketsReader():
 			except KeyboardInterrupt:
 				exit()
 			except Exception as e:
-				sys.stdout.write("\r")
-				sys.stdout.write(stdout.CLEAR)
-				print("Failed to read {} ({})".format(wav_filename, str(e)))
+				printr("")
+				printc("Failed to read {} ({})".format(wav_filename, str(e)), color="red")
 				continue
 
 			duration = audio.size / sampling_rate / 60
 			total_min += duration
 
-			sys.stdout.write("\r")
-			sys.stdout.write(stdout.CLEAR)
-			sys.stdout.write("Reading {} ({}/{}) ... shape={}, rate={}, min={}".format(wav_filename, data_id + 1, len(wav_fs), audio.shape, sampling_rate, int(duration)))
-			sys.stdout.flush()
+			printr("Reading {} ({}/{}) ... shape={}, rate={}, min={}".format(wav_filename, data_id + 1, len(wav_fs), audio.shape, sampling_rate, int(duration)))
 
 			# 転記の読み込みと音声の切り出し
-			batch = generate_signal_transcription_pairs(os.path.join(trn_dir, trn_filename), audio, sampling_rate, vocab)
-
-			# 信号長と転記文字列長の不自然な部分を検出
-			num_points_per_character = 0	# 1文字あたりの信号の数
-			for signal, sentence in batch:
-				num_points_per_character += len(signal) / len(sentence)
-			num_points_per_character /= len(signal)
-
-			accept_rate = 0.7	# ズレの割合がこれ以下なら教師データに誤りが含まれている可能性があるので目視で確認すべき
+			batch = generate_signal_transcription_pairs(os.path.join(trn_dir, trn_filename), audio, sampling_rate, int(sampling_rate * self.frame_width))
 
 			for idx, (signal, sentence) in enumerate(batch):
-				error = abs(len(signal) - num_points_per_character * len(sentence))
-				rate = error / len(signal)
-				if rate < accept_rate:
-					raise Exception(len(signal), len(sentence), num_points_per_character, rate, trn_filename, idx + 1)
-				
-				add_to_bukcet(signal, sentence)
+				add_to_bukcet(signal, sentence, sampling_rate)
 
-		sys.stdout.write("\r")
-		sys.stdout.write(stdout.CLEAR)
+		return buckets_signal, buckets_sentence, total_min
+
+	def dump(self):
+		printr("")
 		printb("bucket	#data	sec")
 		total = 0
-		for bucket_id, signals in enumerate(buckets_signal):
-			if buckets_limit and bucket_id >= buckets_limit:
+		for bucket_id, signals in enumerate(self.buckets_signal):
+			if self.buckets_limit and bucket_id >= self.buckets_limit:
 				break
 			num_data = len(signals)
 			total += num_data
 			print("{}	{:>4}	{:>6.3f}".format(bucket_id + 1, num_data, self.bucket_split_sec * (bucket_id + 1)))
-		print("total	{:>4}		{} hour".format(total, int(total_min / 60)))
-
-		return buckets_signal, buckets_sentence
+		print("total	{:>4}		{} hour".format(total, int(self.total_min / 60)))
