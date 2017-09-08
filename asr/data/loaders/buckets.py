@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from ..reader import BucketsReader, AudioReader
+from ..readers.buckets import Reader
 from ..processing import Processor
 from ...utils import stdout, printb, Object
 from .. import iterators
@@ -23,7 +23,7 @@ class Loader():
 		self.processor = Processor(sampling_rate=sampling_rate, frame_width=frame_width, frame_shift=frame_shift, 
 			num_mel_filters=num_mel_filters, window_func=window_func, using_delta=using_delta, using_delta_delta=using_delta_delta)
 
-		self.reader = BucketsReader(data_path=data_path, buckets_limit=buckets_limit, buckets_cache_size=buckets_cache_size, 
+		self.reader = Reader(data_path=data_path, buckets_limit=buckets_limit, buckets_cache_size=buckets_cache_size, 
 			dev_split=dev_split, seed=seed, sampling_rate=sampling_rate, bucket_split_sec=bucket_split_sec)
 
 		mean_filename = os.path.join(data_path, "mean.npy")

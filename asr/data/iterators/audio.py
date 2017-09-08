@@ -1,4 +1,3 @@
-
 class Iterator():
 	def __init__(self, loader, batchsizes, augmentation=None, gpu=True):
 		self.loader = loader
@@ -8,8 +7,6 @@ class Iterator():
 		self.bucket_id = 0
 		self.pos = 0
 		self.total_itr = loader.get_total_iterations()
-		print(self.total_itr)
-		raise Exception()
 
 	def __iter__(self):
 		return self

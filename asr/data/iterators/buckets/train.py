@@ -1,4 +1,3 @@
-
 class Iterator():
 	def __init__(self, loader, batchsizes, augmentation=None, gpu=True):
 		self.loader = loader

@@ -96,7 +96,6 @@ def main():
 			break
 
 
-	# ノイズ無しデータでバリデーション
 	printb("[Evaluation]")
 	batch_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
 	buckets_errors = [[] for i in range(loader.get_num_buckets())]

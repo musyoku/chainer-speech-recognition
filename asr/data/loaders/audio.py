@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from ..reader import BucketsReader, AudioReader
+from ..readers.audio import Reader
 from ..processing import Processor
 from ...utils import stdout, printb
 from .. import iterators
@@ -21,7 +21,7 @@ class Loader():
 		self.processor = Processor(sampling_rate=sampling_rate, frame_width=frame_width, frame_shift=frame_shift, 
 			num_mel_filters=num_mel_filters, window_func=window_func, using_delta=using_delta, using_delta_delta=using_delta_delta)
 
-		self.reader = AudioReader(wav_directory_list=wav_directory_list, transcription_directory_list=transcription_directory_list, 
+		self.reader = Reader(wav_directory_list=wav_directory_list, transcription_directory_list=transcription_directory_list, 
 			buckets_limit=buckets_limit, frame_width=frame_width, bucket_split_sec=bucket_split_sec)
 
 		self.mean = None

@@ -1,2 +1,2 @@
-from . import loaders
+from . import loaders, readers
 from .augment import AugmentationOption
