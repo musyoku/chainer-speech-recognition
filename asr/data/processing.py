@@ -110,7 +110,7 @@ class Processor():
 		assert max_feature_length > 0
 		return audio_features, sentences, max_feature_length, max_sentence_length
 
-	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, token_ids, id_blank, x_mean, x_std, gpu=True):
+	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, token_ids, id_blank, gpu=True):
 		assert isinstance(token_ids, dict)
 		assert isinstance(id_blank, int)
 		batchsize = len(features)
@@ -169,9 +169,6 @@ class Processor():
 			t_batch[batch_idx, :t_length] = unigram_ids
 			bigram_batch[batch_idx, :t_length] = bigram_ids
 			t_length_batch.append(t_length)
-
-		if x_mean is not None and x_std is not None:
-			x_batch = (x_batch - x_mean) / x_std
 
 		# GPU
 		if gpu:

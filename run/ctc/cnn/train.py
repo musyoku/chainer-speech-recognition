@@ -94,6 +94,8 @@ def main():
 		using_delta_delta=config.using_delta_delta	# ΔΔ特徴量
 	)
 
+	loader.update_stats(10, [128] * 30)
+
 	# データ拡大
 	augmentation = AugmentationOption()
 	if args.augmentation:

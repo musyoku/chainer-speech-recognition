@@ -26,28 +26,54 @@ class Loader():
 		self.reader = Reader(data_path=data_path, buckets_limit=buckets_limit, buckets_cache_size=buckets_cache_size, 
 			dev_split=dev_split, seed=seed, sampling_rate=sampling_rate, bucket_split_sec=bucket_split_sec)
 
-		mean_filename = os.path.join(data_path, "mean.npy")
-		std_filename = os.path.join(data_path, "std.npy")
-
-		try:
-			if global_normalization:
-				if os.path.isfile(mean_filename) == False:
-					raise Exception()
-				if os.path.isfile(std_filename) == False:
-					raise Exception()
-		except:
-			raise Exception("Run preprocess/buckets.py before starting training.")
-
-		self.mean = np.load(mean_filename)[None, ...].astype(np.float32)
-		self.std = np.load(std_filename)[None, ...].astype(np.float32)
-
+		self.stats_total = 0
+		self.stats_mean = None	# データの平均の近似
+		self.stats_nvar = None	# データの分散（×データ数）の近似
 
 	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
-		return self.processor.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, 
-			self.id_blank, self.mean, self.std, gpu)
+		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.processor.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, 
+			self.id_blank, gpu)
+
+		if self.global_normalization:
+			self.update_stats(x_batch)
+			x_mean, x_std = self.get_mean_and_std()
+			x_batch = (x_batch - x_mean) / x_std
+
+		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch
 
 	def extract_batch_features(self, batch, augmentation=None):
 		return self.processor.extract_batch_features(batch, augmentation, self.apply_cmn)
+
+	# 標本平均と不偏標準偏差を返す
+	def get_mean_and_std(self):
+		xp = cuda.get_array_module(self.stats_mean)
+		return self.stats_mean[None, :], xp.sqrt(self.stats_nvar[None, :] / (self.stats_total - 1))
+
+	def update_stats(self, iteration, batchsizes):
+		for i in range(iteration):
+			batch, bucket_idx, piece_id = self.reader.sample_minibatch(batchsizes)
+			audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=augmentation)
+			x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.processor.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, gpu)
+			
+			self.update_stats(x_batch)
+		x_mean, x_std = self.get_mean_and_std()
+
+	def _update_stats_recursively(self, x_batch):
+		xp = cuda.get_array_module(x_batch)
+		batchsize = x_batch.shape[0]
+		if self.stats_total == 0:
+			self.stats_mean = xp.mean(x_batch, axis=(0, 3))
+			self.stats_nvar = xp.var(x_batch, axis=(0, 3)) * batchsize
+		else:
+			sample_sum = np.sum(x_batch, axis=0)
+			sample_squared_sum = np.sum(x_batch ** 2, axis=0)
+
+			new_mean = mean + (sample_sum - batchsize * mean) / (self.stats_total * batchsize)
+			new_nvar = nvar + sample_squared_sum - sample_sum * (new_mean + mean) + batchsize * new_mean * mean
+
+			self.stats_mean = mean
+			self.stats_nvar = new_nvar
+		self.stats_total += batchsize
 
 	def sample_minibatch(self, augmentation=None, gpu=True):
 		# 生の音声信号を取得
