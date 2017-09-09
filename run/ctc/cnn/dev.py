@@ -57,7 +57,6 @@ def main():
 		seed=0,										# シード
 		id_blank=ID_BLANK,							# ブランクのID
 		apply_cmn=args.apply_cmn,					# ケプストラム平均正規化を使うかどうか。データセットに合わせる必要がある。
-		global_normalization=True,					# データ全体の平均分散を使って個別のデータの正規化をするかどうか
 		sampling_rate=config.sampling_rate,			# サンプリングレート
 		frame_width=config.frame_width,				# フレーム幅
 		frame_shift=config.frame_shift,				# フレーム感覚
@@ -87,17 +86,17 @@ def main():
 
 	# モデルの評価
 	printb("[Evaluation]")
-	batch_iter_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
-	total_iterations_dev = batch_iter_dev.get_total_iterations()
+	batch_iter = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
+	total_iterations = batch_iter.get_total_iterations()
 	buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
-	for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter_dev):
+	for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter):
 
 		try:
 			with chainer.using_config("train", False):
 				with chainer.no_backprop_mode():
 					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
-					printr("Computing CER ... {}/{}".format(batch_index + 1, total_iterations_dev))
+					printr("Computing CER ... {}/{}".format(batch_index + 1, total_iterations))
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
 					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
@@ -112,7 +111,7 @@ def main():
 	for errors in buckets_errors:
 		avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-	print("CER", formatted_error(avg_errors_dev))
+	printr("CER: {}".format(formatted_error(avg_errors_dev)))
 
 if __name__ == "__main__":
 	main()

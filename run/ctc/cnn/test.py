@@ -2,8 +2,9 @@ import cupy, os, chainer
 import numpy as np
 import chainer.functions as F
 from chainer import cuda
-from model import load_model, load_config
 from args import args
+from model import build_model
+from asr.model.cnn import load_model_parameters, load_config
 from asr.error import compute_minibatch_error
 from asr.data import AugmentationOption
 from asr.data.loaders.audio import Loader
@@ -26,8 +27,9 @@ def main():
 	except:
 		pass
 
-	config_filename = os.path.join(args.working_directory, "model.json")
+	config_filename = os.path.join(args.working_directory, "config.json")
 	model_filename = os.path.join(args.working_directory, "model.hdf5")
+	stats_directory = os.path.join(args.working_directory, "stats")
 
 	# データの読み込み
 	vocab_token_ids, vocab_id_tokens = get_unigram_ids()
@@ -38,8 +40,9 @@ def main():
 	batchsizes = [64] * 30
 
 	# モデル
-	model, config = load_model(model_filename, config_filename)
-	assert model is not None
+	config = load_config(config_filename)
+	model = build_model(config)
+	assert load_model_parameters(model_filename, model)
 
 	# テストデータの読み込み
 	loader = Loader(
@@ -49,8 +52,6 @@ def main():
 		transcription_directory_list=[
 			"/home/stark/sandbox/CSJ_/test",
 		], 
-		mean_filename=os.path.join(args.dataset_path, "mean.npy"), 
-		std_filename=os.path.join(args.dataset_path, "std.npy"), 
 		batchsizes=batchsizes,
 		buckets_limit=args.buckets_limit, 			# 用いるバケツの制限
 		bucket_split_sec=0.5,						# バケツに区切る間隔
@@ -65,6 +66,7 @@ def main():
 		using_delta=config.using_delta,				# Δ特徴量
 		using_delta_delta=config.using_delta_delta	# ΔΔ特徴量
 	)
+	assert loader.load_stats(stats_directory)
 
 	augmentation = AugmentationOption()
 	if args.augmentation:
@@ -81,17 +83,22 @@ def main():
 
 	# ログ
 	loader.dump()
+	config.dump()
 
 	printb("[Test]")
 	batch_iter = loader.get_batch_iterator(batchsizes, augmentation=augmentation, gpu=using_gpu)
+	total_iterations = batch_iter.get_total_iterations()
 	buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
-	for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_iter:
+	for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter):
 
 		try:
-			with chainer.no_backprop_mode():
-				y_batch = model(x_batch, split_into_variables=False)
-				y_batch = xp.argmax(y_batch.data, axis=2)
+			with chainer.using_config("train", False):
+				with chainer.no_backprop_mode():
+					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
+					printr("Computing CER ... {}/{}".format(batch_index + 1, total_iterations))
+					y_batch = model(x_batch, split_into_variables=False)
+					y_batch = xp.argmax(y_batch.data, axis=2)
 			error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
 			buckets_errors[bucket_id].append(error)
 

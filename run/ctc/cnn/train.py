@@ -85,7 +85,6 @@ def main():
 		seed=0,										# シード
 		id_blank=ID_BLANK,							# ブランクのID
 		apply_cmn=args.apply_cmn,					# ケプストラム平均正規化を使うかどうか。データセットに合わせる必要がある。
-		global_normalization=True,					# データ全体の平均分散を使って個別のデータの正規化をするかどうか
 		sampling_rate=config.sampling_rate,			# サンプリングレート
 		frame_width=config.frame_width,				# フレーム幅
 		frame_shift=config.frame_shift,				# フレーム感覚
