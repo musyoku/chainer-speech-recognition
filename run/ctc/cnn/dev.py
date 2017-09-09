@@ -63,6 +63,7 @@ def main():
 		using_delta=config.using_delta,				# Δ特徴量
 		using_delta_delta=config.using_delta_delta	# ΔΔ特徴量
 	)
+	assert loader.load_stats(stats_directory)
 
 	augmentation = AugmentationOption()
 	if args.augmentation:
@@ -79,6 +80,7 @@ def main():
 
 	# ログ
 	loader.dump()
+	config.dump()
 
 	# モデルの評価
 	printb("[Evaluation]")

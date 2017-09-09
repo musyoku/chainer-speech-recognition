@@ -224,13 +224,14 @@ def main():
 		for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter_dev):
 
 			try:
-				with chainer.no_backprop_mode():
-					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
-					printr("evaluation {}/{}".format(batch_index + 1, total_iterations_dev))
-					y_batch = model(x_batch, split_into_variables=False)
-					y_batch = xp.argmax(y_batch.data, axis=2)
-					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
-					buckets_errors[bucket_id].append(error)
+				with chainer.using_config("train", False):
+					with chainer.no_backprop_mode():
+						# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
+						printr("evaluation {}/{}".format(batch_index + 1, total_iterations_dev))
+						y_batch = model(x_batch, split_into_variables=False)
+						y_batch = xp.argmax(y_batch.data, axis=2)
+						error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
+						buckets_errors[bucket_id].append(error)
 
 			except Exception as e:
 				printr("")
