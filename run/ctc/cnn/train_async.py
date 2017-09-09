@@ -52,7 +52,6 @@ def main():
 	# 設定
 	config = configure()
 	config.vocab_size = vocab_size
-	config.ndim_audio_features = args.ndim_audio_features
 	config.ndim_h = args.ndim_h
 	config.ndim_dense = args.ndim_dense
 	config.num_conv_layers = args.num_conv_layers
@@ -61,6 +60,18 @@ def main():
 	config.weightnorm = args.weightnorm
 	config.wgain = args.wgain
 	config.architecture = args.architecture
+	config.sampling_rate = args.sampling_rate
+	config.frame_width = args.frame_width
+	config.frame_shift = args.frame_shift
+	config.num_mel_filters = args.num_mel_filters
+	config.window_func = args.window_func
+	config.using_delta = args.using_delta
+	config.using_delta_delta = args.using_delta_delta
+	config.ndim_audio_features = 1
+	if args.using_delta:
+		config.ndim_audio_features += 1
+	if args.using_delta_delta:
+		config.ndim_audio_features += 1
 	save_config(config_filename, config)
 
 	# バケツごとのミニバッチサイズ
