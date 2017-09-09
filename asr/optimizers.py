@@ -26,6 +26,20 @@ def set_learning_rate(opt, lr):
 		return
 	raise NotImplementedError()
 
+def set_momentum(opt, momentum):
+	if isinstance(opt, optimizers.NesterovAG):
+		opt.momentum = momentum
+		return
+	if isinstance(opt, optimizers.MomentumSGD):
+		opt.momentum = momentum
+		return
+	if isinstance(opt, optimizers.SGD):
+		return
+	if isinstance(opt, optimizers.Adam):
+		opt.beta1 = momentum
+		return
+	raise NotImplementedError()
+
 def get_optimizer(name, lr, momentum):
 	if name == "sgd":
 		return optimizers.SGD(lr=lr)

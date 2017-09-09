@@ -10,7 +10,7 @@ from asr.error import compute_minibatch_error
 from asr.data import AugmentationOption
 from asr.data.loaders.buckets import Loader
 from asr.utils import printb, printr, printc, bold
-from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer, set_learning_rate
+from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer, set_learning_rate, set_momentum
 from asr.vocab import get_unigram_ids, ID_BLANK
 from asr.training import Environment, Iteration
 from asr.logging import Report
@@ -105,6 +105,7 @@ def main():
 	# 環境
 	def signal_handler():
 		set_learning_rate(optimizer, env.learning_rate)
+		set_momentum(optimizer, env.momentum)
 		augmentation.change_vocal_tract = env.augmentation.change_vocal_tract
 		augmentation.change_speech_rate = env.augmentation.change_speech_rate
 		augmentation.add_noise = env.augmentation.add_noise
@@ -113,6 +114,7 @@ def main():
 
 	env = Environment(env_filename, signal_handler)
 	env.learning_rate = args.learning_rate
+	env.momentum = args.momentum
 	env.final_learning_rate = args.final_learning_rate
 	env.lr_decay = args.lr_decay
 	env.augmentation = augmentation
@@ -135,9 +137,9 @@ def main():
 
 	# バッチサイズの調整
 	print("Searching for the best batch size ...")
-	batch_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
+	batch_iter_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
 	for _ in range(30):
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_train:
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_iter_train:
 			try:
 				with chainer.using_config("train", True):
 					loss = F.connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
@@ -157,9 +159,9 @@ def main():
 		sum_loss = 0
 
 		# パラメータの更新
-		batch_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
+		batch_iter_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
 
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in tqdm(batch_train, total=batch_train.get_total_iterations()):
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in tqdm(batch_iter_train, total=batch_iter_train.get_total_iterations()):
 
 			try:
 				with chainer.using_config("train", True):
@@ -195,10 +197,10 @@ def main():
 		report(loader.get_statistics())
 
 		# ノイズ無しデータでバリデーション
-		batch_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=augmentation, gpu=using_gpu)
+		batch_iter_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=AugmentationOption(), gpu=using_gpu)
 		buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_dev:
+		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_iter_dev:
 
 			try:
 				with chainer.no_backprop_mode():
@@ -217,7 +219,7 @@ def main():
 			avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
 		log = {
-			"loss": sum_loss / batch_train.get_total_iterations(),
+			"loss": sum_loss / batch_iter_train.get_total_iterations(),
 			"CER": formatted_error(avg_errors_dev),
 			"lr": get_learning_rate(optimizer)
 		}
