@@ -1,4 +1,4 @@
-import chainer, codecs, jaconv
+import chainer, codecs, jaconv, acoustics
 import numpy as np
 from chainer import cuda
 from .. import fft

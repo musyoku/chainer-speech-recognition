@@ -155,7 +155,7 @@ def main():
 	# データセットの平均・分散を推定
 	print("Estimating the mean and unbiased variance of the dataset ...")
 	loader.load_stats(stats_directory)
-	loader.update_stats(20, [128] * 30)
+	loader.update_stats(20, [128] * 30, augmentation)
 	loader.save_stats(stats_directory)
 
 	# バッチサイズの調整

@@ -39,11 +39,11 @@ class Loader():
 		xp = cuda.get_array_module(self.stats_mean)
 		return self.stats_mean[None, ..., None], xp.sqrt(self.stats_nvar[None, ..., None] / (self.stats_total - 1))
 
-	def update_stats(self, iteration, batchsizes):
+	def update_stats(self, iteration, batchsizes, augmentation=None):
 		# stack = None
 		for i in range(iteration):
 			batch, bucket_idx, piece_id = self.reader.sample_minibatch(batchsizes)
-			audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=None)
+			audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=augmentation)
 			x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.processor.features_to_minibatch(audio_features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank)
 
 			# xp = cuda.get_array_module(x_batch)
