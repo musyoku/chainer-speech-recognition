@@ -149,7 +149,7 @@ def main():
 	# データセットの平均・分散を推定
 	print("Estimating the mean and unbiased variance of the dataset ...")
 	loader.load_stats(stats_directory)
-	loader.update_stats(10, [128] * 30)
+	loader.update_stats(20, [128] * 30)
 	loader.save_stats(stats_directory)
 
 	# バッチサイズの調整
@@ -224,7 +224,7 @@ def main():
 
 			try:
 				with chainer.no_backprop_mode():
-					print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
+					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
 					printr("evaluation {}/{}".format(batch_index + 1, total_iterations_dev))
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
