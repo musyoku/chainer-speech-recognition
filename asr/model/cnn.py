@@ -3,7 +3,7 @@ import chainer.functions as F
 import chainer.links as L
 from chainer import Chain, serializers, initializers, variable, functions
 from ..stream import Stream
-from ..utils import to_dict, to_object, dump_dict, printb
+from ..utils import to_dict, to_object, dump_dict, printb, _set
 from .. import stream as nn
 
 class Configuration():
@@ -34,13 +34,6 @@ class Configuration():
 def configure():
 	return Configuration()
 
-def save_model(filename, model):
-	tmp_filename = str(uuid.uuid4())
-	serializers.save_hdf5(tmp_filename, model)
-	if os.path.isfile(filename):
-		os.remove(filename)
-	os.rename(tmp_filename, filename)
-
 def save_config(filename, config, overwrite=False):
 	assert isinstance(config, Configuration)
 	assert config.vocab_size > 0
@@ -55,25 +48,32 @@ def save_config(filename, config, overwrite=False):
 
 def load_config(filename):
 	if os.path.isfile(filename):
-		print("loading {} ...".format(filename))
+		print("Loading {} ...".format(filename))
 		with open(filename, "r") as f:
 			try:
 				params = json.load(f)
 			except Exception as e:
 				raise Exception("could not load {}".format(filename))
 
-		return to_object(params)
+		config = Configuration()
+		_set(config, params)
+		return config
 	else:
 		return None
 
-def load_model(filename, model):
+def save_model_parameters(filename, model):
+	tmp_filename = str(uuid.uuid4())
+	serializers.save_hdf5(tmp_filename, model)
 	if os.path.isfile(filename):
-		print("loading {} ...".format(filename))
+		os.remove(filename)
+	os.rename(tmp_filename, filename)
+
+def load_model_parameters(filename, model):
+	if os.path.isfile(filename):
+		print("Loading {} ...".format(filename))
 		serializers.load_hdf5(filename, model)
-			
-		return model
-	else:
-		return None, None
+		return True
+	return False
 		
 # Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
 # https://arxiv.org/abs/1701.02720

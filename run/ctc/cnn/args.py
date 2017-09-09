@@ -1,4 +1,6 @@
-import argparse
+import argparse, sys, os
+
+sys.path.append(os.path.join("..", "..", ".."))
 
 parser = argparse.ArgumentParser()
 

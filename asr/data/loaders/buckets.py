@@ -125,6 +125,8 @@ class Loader():
 		with open(total_filename, mode="rb") as f:
 			self.stats_total = pickle.load(f)
 
+		return True
+
 	def sample_minibatch(self, augmentation=None, gpu=True):
 		# 生の音声信号を取得
 		batch, bucket_idx, piece_id = self.reader.sample_minibatch(self.batchsizes_train)

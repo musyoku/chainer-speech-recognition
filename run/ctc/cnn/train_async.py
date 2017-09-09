@@ -4,9 +4,9 @@ import numpy as np
 import chainer.functions as F
 from chainer import cuda
 from multiprocessing import Process, Queue
-from model import build_model
-from asr.model.cnn import load_model, save_model, save_config, configure
 from args import args
+from model import build_model
+from asr.model.cnn import load_model_parameters, save_model_parameters, save_config, configure
 from asr.error import compute_minibatch_error
 from asr.data import AugmentationOption
 from asr.data.loaders.buckets import Loader
@@ -40,7 +40,7 @@ def main():
 	except:
 		pass
 
-	config_filename = os.path.join(args.working_directory, "model.json")
+	config_filename = os.path.join(args.working_directory, "config.json")
 	model_filename = os.path.join(args.working_directory, "model.hdf5")
 	env_filename = os.path.join(args.working_directory, "training.json")
 	log_filename = os.path.join(args.working_directory, "log.txt")
@@ -111,7 +111,7 @@ def main():
 
 	# モデル
 	model = build_model(config)
-	load_model(model_filename, model)
+	load_model_parameters(model_filename, model)
 
 	if args.gpu_device >= 0:
 		cuda.get_device(args.gpu_device).use()
@@ -247,7 +247,7 @@ def main():
 
 			current_iteration += len(minibatch_list)
 
-		save_model(os.path.join(args.working_directory, "model.hdf5"), model)
+		save_model_parameters(os.path.join(args.working_directory, "model.hdf5"), model)
 
 		report("Epoch {}".format(epoch))
 		report(loader.get_statistics())
@@ -263,7 +263,7 @@ def main():
 				with chainer.using_config("train", False):
 					with chainer.no_backprop_mode():
 						# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
-						printr("evaluation {}/{}".format(batch_index + 1, total_iterations_dev))
+						printr("Computing CER ... {}/{}".format(batch_index + 1, total_iterations_dev))
 						y_batch = model(x_batch, split_into_variables=False)
 						y_batch = xp.argmax(y_batch.data, axis=2)
 						error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)

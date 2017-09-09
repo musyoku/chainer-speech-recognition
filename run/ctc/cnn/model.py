@@ -3,7 +3,6 @@ import chainer.functions as F
 import chainer.links as L
 from six.moves import range
 from chainer import Chain, serializers, initializers, variable, functions
-sys.path.append(os.path.join("..", "..", ".."))
 from asr.model.cnn import AcousticModel
 from asr.stream import Stream
 from asr.utils import to_dict, to_object
