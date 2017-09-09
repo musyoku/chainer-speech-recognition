@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from chainer import cuda
 from ..readers.buckets import Reader
 from ..processing import Processor
 from ...utils import stdout, printb, Object
@@ -35,7 +36,7 @@ class Loader():
 			self.id_blank, gpu)
 
 		if self.global_normalization:
-			self.update_stats(x_batch)
+			self._update_stats_recursively(x_batch)
 			x_mean, x_std = self.get_mean_and_std()
 			x_batch = (x_batch - x_mean) / x_std
 
@@ -50,28 +51,42 @@ class Loader():
 		return self.stats_mean[None, :], xp.sqrt(self.stats_nvar[None, :] / (self.stats_total - 1))
 
 	def update_stats(self, iteration, batchsizes):
-		for i in range(iteration):
+		stack = None
+		for i in range(10):
 			batch, bucket_idx, piece_id = self.reader.sample_minibatch(batchsizes)
-			audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=augmentation)
-			x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.processor.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, gpu)
-			
-			self.update_stats(x_batch)
+			audio_features, sentences, max_feature_length, max_sentence_length = self.extract_batch_features(batch, augmentation=None)
+			x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.processor.features_to_minibatch(audio_features, sentences, max_feature_length, max_sentence_length, self.token_ids, self.id_blank, False)
+
+			xp = cuda.get_array_module(x_batch)
+			for x, length in zip(x_batch, x_length_batch):
+				if stack is None:
+					stack = x[..., :length]
+				else:
+					stack = xp.concatenate((stack, x[..., :length]), axis=2)
+				self._update_stats_recursively(x[..., :length])
+
 		x_mean, x_std = self.get_mean_and_std()
+		true_mean = np.mean(stack, axis=2)
+		true_std = np.std(stack, axis=2)
+		print(xp.mean(abs(true_mean - x_mean), axis=(0, 2)))
+		print(xp.mean(abs(true_std - x_std), axis=(0, 2)))
 
 	def _update_stats_recursively(self, x_batch):
 		xp = cuda.get_array_module(x_batch)
-		batchsize = x_batch.shape[0]
+		batchsize = x_batch.shape[2]
 		if self.stats_total == 0:
-			self.stats_mean = xp.mean(x_batch, axis=(0, 3))
-			self.stats_nvar = xp.var(x_batch, axis=(0, 3)) * batchsize
+			self.stats_mean = xp.mean(x_batch, axis=2)
+			self.stats_nvar = xp.var(x_batch, axis=2) * batchsize
 		else:
-			sample_sum = np.sum(x_batch, axis=0)
-			sample_squared_sum = np.sum(x_batch ** 2, axis=0)
+			old_mean = self.stats_mean
+			old_nvar = self.stats_nvar
+			sample_sum = np.sum(x_batch, axis=2)
+			sample_squared_sum = np.sum(x_batch ** 2, axis=2)
 
-			new_mean = mean + (sample_sum - batchsize * mean) / (self.stats_total * batchsize)
-			new_nvar = nvar + sample_squared_sum - sample_sum * (new_mean + mean) + batchsize * new_mean * mean
+			new_mean = old_mean + (sample_sum - batchsize * old_mean) / (self.stats_total + batchsize)
+			new_nvar = old_nvar + sample_squared_sum - sample_sum * (new_mean + old_mean) + batchsize * new_mean * old_mean
 
-			self.stats_mean = mean
+			self.stats_mean = new_mean
 			self.stats_nvar = new_nvar
 		self.stats_total += batchsize
 
