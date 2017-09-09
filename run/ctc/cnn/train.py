@@ -2,9 +2,9 @@ import sys, cupy, os
 import chainer
 import numpy as np
 import chainer.functions as F
-from tqdm import tqdm
 from chainer import cuda
-from model import load_model, save_model, build_model, save_config, configure
+from model import build_model
+from asr.model.cnn import load_model, save_model, save_config, configure
 from args import args
 from asr.error import compute_minibatch_error
 from asr.data import AugmentationOption
@@ -91,9 +91,8 @@ def main():
 		augmentation.add_noise = True
 
 	# モデル
-	model, _ = load_model(model_filename, config_filename)
-	if model is None:
-		model = build_model(config)
+	model = build_model(config)
+	load_model(model_filename, model)
 
 	if args.gpu_device >= 0:
 		cuda.get_device(args.gpu_device).use()
@@ -160,12 +159,14 @@ def main():
 
 		# パラメータの更新
 		batch_iter_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
+		total_iterations_train = batch_iter_train.get_total_iterations()
 
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in tqdm(batch_iter_train, total=batch_iter_train.get_total_iterations()):
+		for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter_train):
 
 			try:
 				with chainer.using_config("train", True):
 					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
+					printr("iteration {}/{}".format(batch_index + 1, total_iterations_train))
 
 					# 誤差の計算
 					y_batch = model(x_batch)
@@ -198,12 +199,14 @@ def main():
 
 		# ノイズ無しデータでバリデーション
 		batch_iter_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=AugmentationOption(), gpu=using_gpu)
+		total_iterations_dev = batch_iter_dev.get_total_iterations()
 		buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_iter_dev:
+		for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter_dev):
 
 			try:
 				with chainer.no_backprop_mode():
+					printr("evaluation {}/{}".format(batch_index + 1, total_iterations_dev))
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
 					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)
@@ -218,13 +221,13 @@ def main():
 		for errors in buckets_errors:
 			avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-		log = {
+		log_body = {
 			"loss": sum_loss / batch_iter_train.get_total_iterations(),
 			"CER": formatted_error(avg_errors_dev),
 			"lr": get_learning_rate(optimizer)
 		}
-		epochs.console_log(log)
-		report(log)
+		epochs.console_log(log_body)
+		report(log_body)
 
 		# 学習率の減衰
 		decay_learning_rate(optimizer, env.lr_decay, env.final_learning_rate)

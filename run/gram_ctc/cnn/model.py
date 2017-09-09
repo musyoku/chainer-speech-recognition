@@ -2,77 +2,111 @@
 from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
-import sys, os, json, pickle, math, chainer
+import sys, os, json, pickle, math, chainer, uuid
 import chainer.functions as F
 import chainer.links as L
 from six.moves import xrange
 from chainer import Chain, serializers, initializers, variable, functions
-sys.path.append("../../")
-from stream.stream import Stream
-import stream.stream as nn
+sys.path.append(os.path.join("..", "..", ".."))
+from asr.stream import Stream
+from asr.utils import to_dict, to_object
+import asr.stream as nn
 
-def save_model(dirname, model):
-	model_filename = dirname + "/model.hdf5"
+class Configuration():
+	def __init__(self):
+		self.vocab_size = -1
+		self.ndim_audio_features = 40
+		self.ndim_h = 128
+		self.ndim_dense = 256
+		self.num_conv_layers = 5
+		self.kernel_size = (3, 5)
+		self.dropout = 0
+		self.weightnorm = False
+		self.wgain = 1
+		self.architecture = "zhang"
+		self.sampling_rate = 16000
+		self.frame_width = 0.032
+		self.frame_shift = 0.01
+		self.num_mel_filters = 40
+		self.window_func = "hanning"
+		self.using_delta = True
+		self.using_delta_delta = True
+		self.bucket_split_sec = 0.5
 
-	try:
-		os.mkdir(dirname)
-	except:
-		pass
+def configure():
+	return Configuration()
 
-	if os.path.isfile(model_filename):
-		os.remove(model_filename)
-	serializers.save_hdf5(model_filename, model)
+def save_model(filename, model):
+	tmp_filename = str(uuid.uuid4())
+	serializers.save_hdf5(tmp_filename, model)
+	if os.path.isfile(filename):
+		os.remove(filename)
+	os.rename(tmp_filename, filename)
 
-def save_params(dirname, overwrite=False):
-	param_filename = dirname + "/params.json"
+def save_config(filename, config, overwrite=False):
+	assert isinstance(config, Configuration)
+	assert config.vocab_size > 0
 
-	if os.path.isfile(param_filename) and overwrite is False:
+	if os.path.isfile(filename) and overwrite is False:
 		return
-		
-	try:
-		os.mkdir(dirname)
-	except:
-		pass
 
-	config = chainer.config
-	params = {
-		"vocab_size": config.vocab_size,
-		"ndim_dense": config.ndim_dense,
-		"ndim_h": config.ndim_h,
-		"ndim_audio_features": config.ndim_audio_features,
-		"kernel_size": config.kernel_size,
-		"dropout": config.dropout,
-		"weightnorm": config.weightnorm,
-		"architecture": config.architecture,
-		"num_conv_layers": config.num_conv_layers,
-		"wgain": config.wgain,
-	}
-	with open(param_filename, "w") as f:
+	params = to_dict(config)
+	
+	with open(filename, "w") as f:
 		json.dump(params, f, indent=4, sort_keys=True, separators=(',', ': '))
 
-def load_model(dirname):
-	model_filename = dirname + "/model.hdf5"
-	param_filename = dirname + "/params.json"
-
-	if os.path.isfile(param_filename):
-		print("loading {} ...".format(param_filename))
-		with open(param_filename, "r") as f:
+def load_config(filename):
+	if os.path.isfile(filename):
+		print("loading {} ...".format(filename))
+		with open(filename, "r") as f:
 			try:
 				params = json.load(f)
 			except Exception as e:
-				raise Exception("could not load {}".format(param_filename))
+				raise Exception("could not load {}".format(filename))
 
-		model = build_model(**params)
+		return to_object(params)
+	else:
+		return None
+
+def load_model(model_filename, config_filename):
+	if os.path.isfile(model_filename):
+		config = load_config(config_filename)
+		assert config is not None, "{} not found.".format(config_filename)
+		model = build_model(config)
 
 		if os.path.isfile(model_filename):
 			print("loading {} ...".format(model_filename))
 			serializers.load_hdf5(model_filename, model)
-
-		return model
+			
+		return model, config
 	else:
-		return None
+		return None, None
 
-def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, kernel_size=(3, 5), num_conv_layers=4, dropout=0, weightnorm=False, wgain=1, num_mel_filters=40, architecture="zhang"):
+def build_model(config):
+	vocab_size = 			config.vocab_size
+	ndim_audio_features = 	config.ndim_audio_features
+	ndim_h = 				config.ndim_h
+	ndim_dense = 			config.ndim_dense
+	kernel_size = 			config.kernel_size
+	num_conv_layers = 		config.num_conv_layers
+	dropout = 				config.dropout
+	weightnorm = 			config.weightnorm
+	wgain = 				config.wgain
+	num_mel_filters = 		config.num_mel_filters
+	architecture = 			config.architecture
+
+	assert isinstance(vocab_size, int)
+	assert isinstance(ndim_audio_features, int)
+	assert isinstance(ndim_h, int)
+	assert isinstance(ndim_dense, int)
+	assert isinstance(kernel_size, (tuple, list))
+	assert isinstance(num_conv_layers, int)
+	assert isinstance(dropout, float)
+	assert isinstance(weightnorm, bool)
+	assert isinstance(wgain, (int, float))
+	assert isinstance(num_mel_filters, int)
+	assert isinstance(architecture, str)
+
 	model = AcousticModel()
 	pad = kernel_size[1] - 1
 	kernel_height = int(math.ceil((num_mel_filters - 2) / 3))
@@ -80,7 +114,7 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 	if architecture == "zhang":
 		# first layer
 		model.layer(
-			nn.Convolution2D(ndim_audio_features, ndim_h * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+			nn.Convolution2D(ndim_audio_features, ndim_h * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), weightnorm=weightnorm),
 			lambda x: x[..., :-pad],
 			nn.Maxout(2),
 			nn.Dropout(dropout),
@@ -95,7 +129,7 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 
 		for in_channels, out_channels in in_out:
 			model.layer(
-				nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+				nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), weightnorm=weightnorm),
 				lambda x: x[..., :-pad],
 				nn.Maxout(2),
 				nn.Dropout(dropout),
@@ -105,7 +139,7 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 			in_out = [(ndim_h * 2, ndim_h * 4)] * num_conv_layers_narrow
 			for in_channels, out_channels in in_out:
 				model.layer(
-					nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+					nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), weightnorm=weightnorm),
 					lambda x: x[..., :-pad],
 					nn.Maxout(2),
 					nn.Dropout(dropout),
@@ -131,7 +165,7 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 	if architecture == "zhang+fc_relu":
 		# first layer
 		model.layer(
-			nn.Convolution2D(ndim_audio_features, ndim_h * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_audio_features / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+			nn.Convolution2D(ndim_audio_features, ndim_h * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1), weightnorm=weightnorm),
 			lambda x: x[..., :-pad],
 			nn.Maxout(2),
 			nn.Dropout(dropout),
@@ -146,7 +180,7 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 
 		for in_channels, out_channels in in_out:
 			model.layer(
-				nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+				nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), weightnorm=weightnorm),
 				lambda x: x[..., :-pad],
 				nn.Maxout(2),
 				nn.Dropout(dropout),
@@ -156,7 +190,7 @@ def build_model(vocab_size, ndim_audio_features=3, ndim_h=128, ndim_dense=320, k
 			in_out = [(ndim_h * 2, ndim_h * 4)] * num_conv_layers_narrow
 			for in_channels, out_channels in in_out:
 				model.layer(
-					nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), initialW=initializers.Normal(math.sqrt(wgain / ndim_h / kernel_size[0] / kernel_size[1])), weightnorm=weightnorm),
+					nn.Convolution2D(in_channels, out_channels, kernel_size, stride=1, pad=(1, kernel_size[1] - 1), weightnorm=weightnorm),
 					lambda x: x[..., :-pad],
 					nn.Maxout(2),
 					nn.Dropout(dropout),

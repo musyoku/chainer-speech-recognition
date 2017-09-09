@@ -48,8 +48,6 @@ class Iteration():
 		sys.stdout.write(stdout.CLEAR)
 		sys.stdout.write(stdout.MOVE)
 		sys.stdout.write(stdout.CLEAR)
-		sys.stdout.write(stdout.MOVE)
-		sys.stdout.write(stdout.CLEAR)
 		sys.stdout.write(stdout.LEFT)
 		total_time = time.time() - self.start_time
 		elapsed_time = time.time() - self.current_epoch_start_time

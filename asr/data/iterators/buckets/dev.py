@@ -41,7 +41,7 @@ class Iterator():
 			self.piece_id = 0
 			self.bucket_id += 1
 
-		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id, piece_id
+		return x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id
 
 	def _next(self):
 		bucket_id = self.bucket_id

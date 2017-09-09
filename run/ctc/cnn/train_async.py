@@ -4,7 +4,8 @@ import numpy as np
 import chainer.functions as F
 from chainer import cuda
 from multiprocessing import Process, Queue
-from model import load_model, save_model, build_model, save_config, configure
+from model import build_model
+from asr.model.cnn import load_model, save_model, save_config, configure
 from args import args
 from asr.error import compute_minibatch_error
 from asr.data import AugmentationOption
@@ -97,9 +98,8 @@ def main():
 		augmentation.add_noise = True
 
 	# モデル
-	model, _ = load_model(model_filename, config_filename)
-	if model is None:
-		model = build_model(config)
+	model = build_model(config)
+	load_model(model_filename, model)
 
 	if args.gpu_device >= 0:
 		cuda.get_device(args.gpu_device).use()
@@ -233,12 +233,14 @@ def main():
 
 		# ノイズ無しデータでバリデーション
 		batch_iter_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=AugmentationOption(), gpu=using_gpu)
+		total_iterations_dev = batch_iter_dev.get_total_iterations()
 		buckets_errors = [[] for i in range(loader.get_num_buckets())]
 
-		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_iter_dev:
+		for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter_dev):
 
 			try:
 				with chainer.no_backprop_mode():
+					printr("evaluation {}/{}".format(batch_index + 1, total_iterations_dev))
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)
 					error = compute_minibatch_error(y_batch, t_batch, ID_BLANK, vocab_token_ids, vocab_id_tokens)

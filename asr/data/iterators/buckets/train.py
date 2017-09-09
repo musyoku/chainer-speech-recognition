@@ -16,6 +16,5 @@ class Iterator():
 		self.itr += 1
 		return self.loader.sample_minibatch(self.augmentation, self.gpu)
 
-
 	def get_total_iterations(self):
 		return self.total_itr
