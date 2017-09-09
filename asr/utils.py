@@ -29,6 +29,23 @@ def to_dict(obj):
 				d[key] = attr
 	return d
 
+def dump_dict(d, depth):
+	for key in d:
+		value = d[key]
+		if isinstance(value, dict):
+			for _ in range(depth):
+				sys.stdout.write("	")
+			sys.stdout.write("{}:".format(key))
+			sys.stdout.write("\n")
+			dump_dict(value, depth + 1)
+		else:
+			for _ in range(depth):
+				sys.stdout.write("	")
+			sys.stdout.write(key)
+			sys.stdout.write(":	")
+			sys.stdout.write(bold(str(value)))
+			sys.stdout.write("\n")
+
 class stdout:
 	BOLD = "\033[1m"
 	RED = "\033[31m"

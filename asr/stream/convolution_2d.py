@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
-import math
+import math, chainer
 import numpy as np
 from six import moves
-from chainer import cuda, variable, initializers, link, function, Variable
+from chainer import cuda, variable, initializers, link, function, Variable, functions
 from chainer.utils import conv, type_check
-from chainer.functions.connection import convolution_2d
 
 if cuda.cudnn_enabled:
 	cudnn = cuda.cudnn
@@ -12,10 +10,8 @@ if cuda.cudnn_enabled:
 	_cudnn_version = libcudnn.getVersion()
 	_fwd_pref = libcudnn.CUDNN_CONVOLUTION_FWD_SPECIFY_WORKSPACE_LIMIT
 	if _cudnn_version >= 3000:
-		_bwd_filter_pref = \
-			libcudnn.CUDNN_CONVOLUTION_BWD_FILTER_SPECIFY_WORKSPACE_LIMIT
-		_bwd_data_pref = \
-			libcudnn.CUDNN_CONVOLUTION_BWD_DATA_SPECIFY_WORKSPACE_LIMIT
+		_bwd_filter_pref = libcudnn.CUDNN_CONVOLUTION_BWD_FILTER_SPECIFY_WORKSPACE_LIMIT
+		_bwd_data_pref = libcudnn.CUDNN_CONVOLUTION_BWD_DATA_SPECIFY_WORKSPACE_LIMIT
 
 
 def _check_cudnn_acceptable_type(x_dtype, W_dtype):
@@ -33,7 +29,7 @@ def _pair(x):
 		return x
 	return x, x
 
-class Convolution2DFunction(convolution_2d.Convolution2DFunction):
+class Convolution2DFunction(functions.connection.convolution_2d.Convolution2DFunction):
 
 	def check_type_forward(self, in_types):
 		n_in = in_types.size()
@@ -156,10 +152,10 @@ class Convolution2D(link.Link):
 	def _initialize_params(self, t):
 		xp = cuda.get_array_module(t)
 		# 出力チャネルごとにミニバッチ平均をとる
-		self.mean_t = xp.mean(t, axis=(0, 2, 3)).reshape(1, -1, 1, 1)
-		self.std_t = xp.sqrt(xp.var(t, axis=(0, 2, 3))).reshape(1, -1, 1, 1)
-		g = 1 / self.std_t
-		b = -self.mean_t / self.std_t
+		mean_t = xp.mean(t, axis=(0, 2, 3)).reshape(1, -1, 1, 1)
+		std_t = xp.sqrt(xp.var(t, axis=(0, 2, 3))).reshape(1, -1, 1, 1)
+		g = 1 / std_t
+		b = -mean_t / std_t
 
 		# print "g <- {}, b <- {}".format(g.reshape((-1,)), b.reshape((-1,)))
 
@@ -167,6 +163,8 @@ class Convolution2D(link.Link):
 			if self.nobias == False:
 				self.b = variable.Parameter(b.reshape((-1,)))
 			self.g = variable.Parameter(g.reshape((self.out_channels, 1, 1, 1)))
+
+		return mean_t, std_t
 
 	@property
 	def W(self):
@@ -183,8 +181,9 @@ class Convolution2D(link.Link):
 				V_shape = (self.out_channels, x.shape[1], kh, kw)
 				self.V.initialize(V_shape)
 			xp = cuda.get_array_module(x)
-			t = convolution_2d(x, self.V, Variable(xp.full((self.out_channels, 1, 1, 1), 1.0).astype(x.dtype)), None, self.stride, self.pad)	# compute output with g = 1 and without bias
-			self._initialize_params(t.data)
-			return (t - self.mean_t) / self.std_t
+			with chainer.no_backprop_mode():
+				t = convolution_2d(x, self.V, Variable(xp.full((self.out_channels, 1, 1, 1), 1.0).astype(x.dtype)), None, self.stride, self.pad)	# compute output with g = 1 and without bias
+			mean_t, std_t = self._initialize_params(t.data)
+			return (t - mean_t) / std_t
 
 		return convolution_2d(x, self.V, self.g, self.b, self.stride, self.pad)

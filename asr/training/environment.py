@@ -1,22 +1,5 @@
 import os, signal, json, sys
-from ..utils import Object, to_dict, printb
-
-def _dump(d, depth):
-	for key in d:
-		value = d[key]
-		if isinstance(value, dict):
-			for _ in range(depth):
-				sys.stdout.write("	")
-			sys.stdout.write("{}:".format(key))
-			sys.stdout.write("\n")
-			_dump(value, depth + 1)
-		else:
-			for _ in range(depth):
-				sys.stdout.write("	")
-			sys.stdout.write(key)
-			sys.stdout.write(":	")
-			sys.stdout.write(str(value))
-			sys.stdout.write("\n")
+from ..utils import Object, to_dict, printb, bold, dump_dict
 
 def _set(self, d):
 	for key in d:
@@ -56,4 +39,4 @@ class Environment(Object):
 	def dump(self):
 		env = to_dict(self)
 		printb("[Environment]")
-		_dump(env, 1)
+		dump_dict(env, 1)

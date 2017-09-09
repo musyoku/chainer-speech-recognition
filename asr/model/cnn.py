@@ -3,7 +3,7 @@ import chainer.functions as F
 import chainer.links as L
 from chainer import Chain, serializers, initializers, variable, functions
 from ..stream import Stream
-from ..utils import to_dict, to_object
+from ..utils import to_dict, to_object, dump_dict, printb
 from .. import stream as nn
 
 class Configuration():
@@ -26,6 +26,10 @@ class Configuration():
 		self.using_delta = True
 		self.using_delta_delta = True
 		self.bucket_split_sec = 0.5
+
+	def dump(self):
+		printb("[Configuration]")
+		dump_dict(to_dict(self), 1)
 
 def configure():
 	return Configuration()

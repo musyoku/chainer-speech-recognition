@@ -137,6 +137,7 @@ def main():
 	# ログ
 	loader.dump()
 	env.dump()
+	config.dump()
 
 	# optimizer
 	optimizer = get_optimizer(args.optimizer, env.learning_rate, args.momentum)
