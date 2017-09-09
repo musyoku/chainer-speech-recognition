@@ -186,6 +186,8 @@ def main():
 			for batch_idx, data in enumerate(minibatch_list):
 				try:
 					with chainer.using_config("train", True):
+						printr("iteration {}/{}".format(batch_idx + current_iteration + 1, total_iterations_train))
+
 						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id = data
 
 						if args.gpu_device >= 0:
@@ -210,7 +212,6 @@ def main():
 						optimizer.update(lossfun=lambda: loss)
 						
 						sum_loss += loss_value
-						printr("iteration {}/{}".format(batch_idx + current_iteration + 1, total_iterations_train))
 
 				except Exception as e:
 					printr("")
@@ -250,18 +251,17 @@ def main():
 				printr("")
 				printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
 				
-		# printr("")
 		avg_errors_dev = []
 		for errors in buckets_errors:
 			avg_errors_dev.append(sum(errors) / len(errors) * 100)
 
-		log = {
+		log_body = {
 			"loss": sum_loss / batch_iter_train.get_total_iterations(),
 			"CER": formatted_error(avg_errors_dev),
 			"lr": get_learning_rate(optimizer)
 		}
-		epochs.console_log(log)
-		report(log)
+		epochs.console_log(log_body)
+		report(log_body)
 
 		# 学習率の減衰
 		decay_learning_rate(optimizer, env.lr_decay, env.final_learning_rate)
