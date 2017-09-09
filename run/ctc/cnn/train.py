@@ -36,6 +36,7 @@ def main():
 	model_filename = os.path.join(args.working_directory, "model.hdf5")
 	env_filename = os.path.join(args.working_directory, "training.json")
 	log_filename = os.path.join(args.working_directory, "log.txt")
+	stats_directory = os.path.join(args.working_directory, "stats")
 
 	# データの読み込み
 	vocab_token_ids, vocab_id_tokens = get_unigram_ids()
@@ -94,8 +95,6 @@ def main():
 		using_delta_delta=config.using_delta_delta	# ΔΔ特徴量
 	)
 
-	loader.update_stats(10, [128] * 30)
-
 	# データ拡大
 	augmentation = AugmentationOption()
 	if args.augmentation:
@@ -146,6 +145,12 @@ def main():
 		optimizer.add_hook(chainer.optimizer.GradientClipping(args.grad_clip))
 	if args.weight_decay > 0:
 		optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
+
+	# データセットの平均・分散を推定
+	print("Estimating the mean and unbiased variance of the dataset ...")
+	loader.load_stats(stats_directory)
+	loader.update_stats(10, [128] * 30)
+	loader.save_stats(stats_directory)
 
 	# バッチサイズの調整
 	print("Searching for the best batch size ...")
@@ -219,6 +224,7 @@ def main():
 
 			try:
 				with chainer.no_backprop_mode():
+					print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
 					printr("evaluation {}/{}".format(batch_index + 1, total_iterations_dev))
 					y_batch = model(x_batch, split_into_variables=False)
 					y_batch = xp.argmax(y_batch.data, axis=2)

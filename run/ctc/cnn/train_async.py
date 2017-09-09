@@ -151,6 +151,12 @@ def main():
 	if args.weight_decay > 0:
 		optimizer.add_hook(chainer.optimizer.WeightDecay(args.weight_decay))
 
+	# データセットの平均・分散を推定
+	print("Estimating the mean and unbiased variance of the dataset ...")
+	loader.load_stats(stats_directory)
+	loader.update_stats(10, [128] * 30)
+	loader.save_stats(stats_directory)
+	
 	# バッチサイズの調整
 	print("Searching for the best batch size ...")
 	batch_iter_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
