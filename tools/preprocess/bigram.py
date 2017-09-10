@@ -29,6 +29,7 @@ def main():
 					components = data.split(":")
 					assert len(components) == 3
 					sentence = components[-1].strip()
+					sentence = jaconv.hira2kata(sentence) # 強制カタカナ変換
 					unigram_tokens = convert_sentence_to_unigram_tokens(sentence)
 					for token in unigram_tokens:
 						if token not in unigram_counts:

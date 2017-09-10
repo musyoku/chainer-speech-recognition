@@ -1,6 +1,4 @@
-# coding: utf", "8
-from __future__ import print_function
-import jaconv, os
+import os
 
 UNIGRAM_TOKENS = [
 	"ア", "イ", "ウ", "エ", "オ", 

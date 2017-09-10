@@ -1,53 +1,52 @@
-# coding: utf-8
-import pylab, argparse, codecs, os, sys
+import pylab, argparse, codecs, os, sys, pickle
 import scipy.signal
 import scipy.io.wavfile as wavfile
+import os
 import numpy as np
 from matplotlib import pyplot as plt
 from acoustics import generator
-sys.path.append("../")
-import fft
+sys.path.append(os.path.join("..", ".."))
+from asr import fft
 
-def normalize(array):
-	mean = np.mean(array)
-	stddev = np.std(array)
-	array = (array - mean) / stddev
-	return array
-
-def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False, global_normalization=False):
+def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False, global_normalization=False, add_noise=False):
 	try:
 		os.makedirs(out_dir)
 	except:
 		pass
 
 	# add noise (optional)
-	# noise = (generator.noise(len(signal), color="white") * 400).astype(np.int16)
-	# signal += noise	
+	if add_noise:
+		noise = (generator.noise(len(signal), color="white") * 400).astype(np.int16)
+		signal += noise	
 
 	# .wav
 	# wavfile.write(os.path.join(out_dir, filename + ".wav"), sampling_rate, signal.astype(np.int16))
 
-	specgram = fft.get_specgram(signal, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, winfunc=lambda x:np.hanning(x))
+	specgram = fft.get_specgram(signal, sampling_rate, nfft=512, winlen=args.frame_width, winstep=args.frame_shift, winfunc=lambda x:np.hanning(x))
 	log_specgram = np.log(specgram)
+
 	if apply_cmn:
 		specgram = np.exp(np.log(specgram) - np.mean(log_specgram, axis=0))
 
 	# data augmentation
 	# specgram = fft.augment_specgram(specgram)
 
-	logmel = fft.compute_logmel(specgram, sampling_rate, nfft=512, winlen=0.032, winstep=0.01, nfilt=40, lowfreq=0, winfunc=lambda x:np.hanning(x))
+	logmel = fft.compute_logmel(specgram, sampling_rate, nfft=512, winlen=args.frame_width, winstep=args.frame_shift, nfilt=40, lowfreq=0, winfunc=lambda x:np.hanning(x))
 	logmel, delta, delta_delta = fft.compute_deltas(logmel)
-	if apply_cmn:
-		logmel = normalize(logmel)
-		delta = normalize(delta)
-		delta_delta = normalize(delta_delta)
 
 	if global_normalization:
-		cache_path = "/home/aibo/sandbox/wav_cmn"
-		mean = np.load(os.path.join(cache_path, "mean.npy")).astype(np.float32)[..., 0]
-		std = np.load(os.path.join(cache_path, "std.npy")).astype(np.float32)[..., 0]
-		assert np.isnan(np.sum(mean)) == False
-		assert np.isnan(np.sum(std)) == False
+		mean_filename = os.path.join(args.stats_dir, "mean.npy")
+		nvar_filename = os.path.join(args.stats_dir, "nvar.npy")
+		total_filename = os.path.join(args.stats_dir, "total.count")
+
+		mean = np.load(mean_filename).astype(np.float32)
+		nvar = np.load(nvar_filename).astype(np.float32)
+		with open(total_filename, mode="rb") as f:
+			stats_total = pickle.load(f)
+
+		mean = mean
+		std = np.sqrt(nvar / (stats_total - 1))
+
 		logmel = (logmel - mean[0]) / std[0]
 		delta = (delta - mean[1]) / std[1]
 		delta_delta = (delta_delta - mean[2]) / std[2]
@@ -161,18 +160,27 @@ def split_audio(wav_filename, trn_filename):
 
 	return sampling_rate, features
 
-def main(args):
+def main():
+	assert args.wav_filename
+	assert args.trn_filename
+	assert args.out_dir
+	assert args.stats_dir
+
 	sampling_rate, features = split_audio(args.wav_filename, args.trn_filename)
-	for idx, signal in enumerate(features):
-		plot_features(args.out_dir, signal, sampling_rate, "{}.png".format(idx + 1), apply_cmn=False)
-		plot_features(args.out_dir, signal, sampling_rate, "{}.cmn.png".format(idx + 1), apply_cmn=True)
-		plot_features(args.out_dir, signal, sampling_rate, "{}.norm.png".format(idx + 1), apply_cmn=False, global_normalization=True)
-		plot_features(args.out_dir, signal, sampling_rate, "{}.cmn.norm.png".format(idx + 1), apply_cmn=True, global_normalization=True)
+	for index, signal in enumerate(features):
+		plot_features(args.out_dir, signal, sampling_rate, "{}.png".format(index + 1), apply_cmn=False)
+		plot_features(args.out_dir, signal, sampling_rate, "{}.norm.png".format(index + 1), apply_cmn=False, 
+			global_normalization=True)
+		plot_features(args.out_dir, signal, sampling_rate, "{}.noise.png".format(index + 1), apply_cmn=False, 
+			global_normalization=True, add_noise=True)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--wav-filename", "-wav", type=str)
 	parser.add_argument("--trn-filename", "-trn", type=str)
 	parser.add_argument("--out-dir", "-out", type=str)
+	parser.add_argument("--stats-dir", "-stats", type=str)
+	parser.add_argument("--frame-width", "-fwidth", type=float, default=0.032)
+	parser.add_argument("--frame-shift", "-fshift", type=float, default=0.01)
 	args = parser.parse_args()
-	main(args)
+	main()
