@@ -1,6 +1,9 @@
-import argparse
+import argparse, sys, os
+
+sys.path.append(os.path.join("..", "..", ".."))
 
 parser = argparse.ArgumentParser()
+
 parser.add_argument("--epochs", "-e", type=int, default=1000)
 parser.add_argument("--grad-clip", "-gc", type=float, default=1) 
 parser.add_argument("--weight-decay", "-wd", type=float, default=1e-5) 
@@ -11,8 +14,18 @@ parser.add_argument("--momentum", "-mo", type=float, default=0.9)
 parser.add_argument("--optimizer", "-opt", type=str, default="adam")
 
 parser.add_argument("--augmentation", "-augmentation", default=False, action="store_true")
+parser.add_argument("--joint-training", "-joint", default=False, action="store_true")
 
-parser.add_argument("--ndim-audio-features", "-features", type=int, default=3)
+parser.add_argument("--sampling-rate", "-rate", type=int, default=16000) 
+parser.add_argument("--frame-width", "-fwidth", type=float, default=0.032) 
+parser.add_argument("--frame-shift", "-fshift", type=float, default=0.01) 
+parser.add_argument("--num-mel-filters", "-nmel", type=int, default=40) 
+parser.add_argument("--window-func", "-winf", type=str, default="hanning")
+parser.add_argument("--using-delta", dest="using_delta", default=True, action="store_true") 
+parser.add_argument("--not-using-delta", dest="using_delta", action="store_false") 
+parser.add_argument("--using-delta-delta", dest="using_delta_delta", default=True, action="store_true") 
+parser.add_argument("--not-using-delta-delta", dest="using_delta_delta", action="store_false") 
+
 parser.add_argument("--ndim-h", "-dh", type=int, default=128)
 parser.add_argument("--ndim-dense", "-dd", type=int, default=320)
 parser.add_argument("--num-conv-layers", "-nconv", type=int, default=4)

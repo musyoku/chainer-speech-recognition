@@ -11,6 +11,7 @@ class Loader():
 		self.stats_total = 0
 		self.stats_mean = None	# データの平均の近似
 		self.stats_nvar = None	# データの分散（×データ数）の近似
+		self.apply_cmn = False
 
 	def features_to_minibatch(self, features, sentences, max_feature_length, max_sentence_length, gpu=True):
 		x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch = self.processor.features_to_minibatch(features, sentences, max_feature_length, max_sentence_length, self.token_ids, 
