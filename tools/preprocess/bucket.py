@@ -1,7 +1,5 @@
-import os, codecs, re, sys, math, chainer, pickle, acoustics, argparse
-import numpy as np
+import os, re, sys, pickle, argparse
 import scipy.io.wavfile as wavfile
-from chainer import cuda
 sys.path.append(os.path.join("..", ".."))
 from asr.data.processing import generate_signal_transcription_pairs
 from asr.data.readers.buckets import _get_bucket_index
@@ -58,9 +56,9 @@ def main():
 		if buckets_limit is not None and bucket_id > buckets_limit:
 			return False
 		file_index = buckets_file_indices[bucket_id]
+
 		num_signals = len(buckets_signal[bucket_id])
 		assert num_signals > 0
-
 		with open (os.path.join(dataset_path, "signal", "{}_{}_{}.bucket".format(bucket_id, file_index, num_signals)), "wb") as f:
 			pickle.dump(buckets_signal[bucket_id], f)
 
@@ -68,6 +66,8 @@ def main():
 		assert num_signals == num_sentences
 		with open (os.path.join(dataset_path, "sentence", "{}_{}_{}.bucket".format(bucket_id, file_index, num_sentences)), "wb") as f:
 			pickle.dump(buckets_sentence[bucket_id], f)
+
+		# クリア
 		buckets_signal[bucket_id] = []
 		buckets_sentence[bucket_id] = []
 		buckets_file_indices[bucket_id] += 1
@@ -153,8 +153,6 @@ if __name__ == "__main__":
 	mkdir(args.dataset_path)
 	mkdir(os.path.join(args.dataset_path, "signal"))
 	mkdir(os.path.join(args.dataset_path, "sentence"))
-	np.random.seed(0)
-
 
 	# すべての.wavを読み込み、一定の長さごとに保存
 	main()

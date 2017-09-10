@@ -1,26 +1,29 @@
-# coding: utf", "8
-from __future__ import print_function
 import jaconv, os, sys, argparse, codecs
-sys.path.append("../")
-from vocab import get_all_bigram_tokens, convert_sentence_to_unigram_tokens, UNIGRAM_TOKENS
+sys.path.append(os.path.join("..", ".."))
+from asr.vocab import get_all_bigram_tokens, convert_sentence_to_unigram_tokens, UNIGRAM_TOKENS
+from asr.utils import printr, printc
 
 def main():
 	unigram_counts = {}
 	for token in UNIGRAM_TOKENS:
 		unigram_counts[token] = 0
+
 	bigram_counts = {}
 	bigram_tokens = get_all_bigram_tokens()
 	for (first, second) in bigram_tokens:
 		bigram_counts[first + second] = 0
-	trn_base_dir = "/home/stark/sandbox/CSJ_/"
+
+	trn_base_dir = "/home/stark/sandbox/CSJ_/"	# 変換済みの書き起こし
 	trn_dir_list = [os.path.join(trn_base_dir, category) for category in ["core", "noncore"]]
 	all_triphone_sequences = []
+
 	for dir_idx, trn_dir in enumerate(trn_dir_list):
 		trn_files = os.listdir(trn_dir)
+
 		for file_idx, trn_filename in enumerate(trn_files):
+			printr("\r{}/{} ({}/{})".format(file_idx + 1, len(trn_files), dir_idx + 1, len(trn_dir_list)))
 			trn_path = os.path.join(trn_dir, trn_filename)
-			sys.stdout.write("\r{}/{} ({}/{})".format(file_idx + 1, len(trn_files), dir_idx + 1, len(trn_dir_list)))
-			sys.stdout.flush()
+
 			with codecs.open(trn_path, "r", "utf-8") as f:
 				for data in f:
 					components = data.split(":")
@@ -42,6 +45,7 @@ def main():
 						if key not in bigram_counts:
 							raise Exception(key)
 						bigram_counts[key] += 1
+						
 	print(bigram_counts)
 	threshold = 500
 	accepted_bigram = []
@@ -63,6 +67,6 @@ def main():
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--output-filename", "-file", type=str, default="../bigram.list") 
+	parser.add_argument("--output-filename", "-file", type=str, default="../../bigram.list") 
 	args = parser.parse_args()
 	main()
