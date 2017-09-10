@@ -2,138 +2,78 @@ import os, codecs, re, sys, math, chainer, pickle, acoustics, argparse
 import numpy as np
 import scipy.io.wavfile as wavfile
 from chainer import cuda
-sys.path.append(os.path.join("..", "..", ".."))
-import config, fft
-from util import stdout, printb, printr
-from dataset import get_bucket_index, generate_signal_transcription_pairs
+sys.path.append(os.path.join("..", ".."))
+from asr.data.processing import generate_signal_transcription_pairs
+from asr.data.readers.buckets import _get_bucket_index
+from asr.utils import printr, printc
 
-# CSJのwavが入っているディレクトリ
-wav_path_list = [
-	"/home/stark/sandbox/CSJ/WAV/core",
-	"/home/stark/sandbox/CSJ/WAV/noncore",
-]
-# 変換済みの書き起こしデータ
-# https://github.com/musyoku/csj-preprocesser
-transcription_path_list = [
-	"/home/stark/sandbox/CSJ_/core",
-	"/home/stark/sandbox/CSJ_/noncore",
-]
+def main():
+	# CSJのwavが入っているディレクトリ
+	wav_path_list = [
+		"/home/stark/sandbox/CSJ/WAV/core",
+		"/home/stark/sandbox/CSJ/WAV/noncore",
+	]
+	# 変換済みの書き起こしデータ
+	# https://github.com/musyoku/csj-preprocesser
+	transcription_path_list = [
+		"/home/stark/sandbox/CSJ_/core",
+		"/home/stark/sandbox/CSJ_/noncore",
+	]
 
+	buckets_limit = args.buckets_limit
+	buckets_split_sec = args.buckets_split_sec
+	num_signals_per_file = args.num_signals_per_file
+	dataset_path = args.dataset_path
 
-def generate_buckets(wav_paths, transcription_paths, dataset_path, buckets_limit, num_signals_per_file=1000):
-	assert len(wav_paths) > 0
-	assert len(transcription_paths) > 0
-
-	config = chainer.config
 	buckets_signal = []
 	buckets_sentence = []
 	buckets_file_indices = []
 	max_sentence_length = 0
 	max_logmel_length = 0
 	current_num_data = 0
-	data_limit_exceeded = False
 	total_min = 0
-	statistics_denominator = 0
-	feature_mean = 0
-	feature_std = 0
 
-	def append_bucket(buckets, bucket_idx, data):
-		if len(buckets) <= bucket_idx:
-			while len(buckets) <= bucket_idx:
+	def append_bucket(buckets, bucket_id, data):
+		if len(buckets) <= bucket_id:
+			while len(buckets) <= bucket_id:
 				buckets.append([])
-		buckets[bucket_idx].append(data)
+		buckets[bucket_id].append(data)
 
-	def add_to_bukcet(signal, sentence):
-		bucket_idx = get_bucket_index(signal, config.sampling_rate, config.bucket_split_sec)
+	def add_to_bukcet(signal, sentence, sampling_rate):
+		bucket_id = _get_bucket_index(signal, sampling_rate, buckets_split_sec)
 		# add signal
-		append_bucket(buckets_signal, bucket_idx, signal)
+		append_bucket(buckets_signal, bucket_id, signal)
 		# add sentence
-		append_bucket(buckets_sentence, bucket_idx, sentence)
+		append_bucket(buckets_sentence, bucket_id, sentence)
 		# add file index
-		if len(buckets_file_indices) <= bucket_idx:
-			while len(buckets_file_indices) <= bucket_idx:
+		if len(buckets_file_indices) <= bucket_id:
+			while len(buckets_file_indices) <= bucket_id:
 				buckets_file_indices.append(0)
 		# check
-		if len(buckets_signal[bucket_idx]) >= num_signals_per_file:
-			return True, bucket_idx
-		return False, bucket_idx
+		if len(buckets_signal[bucket_id]) >= num_signals_per_file:
+			return True, bucket_id
+		return False, bucket_id
 
-	def save_bucket(bucket_idx):
-		if buckets_limit is not None and bucket_idx > buckets_limit:
+	def save_bucket(bucket_id):
+		if buckets_limit is not None and bucket_id > buckets_limit:
 			return False
-		file_index = buckets_file_indices[bucket_idx]
-		num_signals = len(buckets_signal[bucket_idx])
+		file_index = buckets_file_indices[bucket_id]
+		num_signals = len(buckets_signal[bucket_id])
 		assert num_signals > 0
 
-		with open (os.path.join(dataset_path, "signal", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_signals)), "wb") as f:
-			pickle.dump(buckets_signal[bucket_idx], f)
+		with open (os.path.join(dataset_path, "signal", "{}_{}_{}.bucket".format(bucket_id, file_index, num_signals)), "wb") as f:
+			pickle.dump(buckets_signal[bucket_id], f)
 
-		num_sentences = len(buckets_sentence[bucket_idx])
+		num_sentences = len(buckets_sentence[bucket_id])
 		assert num_signals == num_sentences
-		with open (os.path.join(dataset_path, "sentence", "{}_{}_{}.bucket".format(bucket_idx, file_index, num_sentences)), "wb") as f:
-			pickle.dump(buckets_sentence[bucket_idx], f)
-		buckets_signal[bucket_idx] = []
-		buckets_sentence[bucket_idx] = []
-		buckets_file_indices[bucket_idx] += 1
+		with open (os.path.join(dataset_path, "sentence", "{}_{}_{}.bucket".format(bucket_id, file_index, num_sentences)), "wb") as f:
+			pickle.dump(buckets_sentence[bucket_id], f)
+		buckets_signal[bucket_id] = []
+		buckets_sentence[bucket_id] = []
+		buckets_file_indices[bucket_id] += 1
 		return True
 
-	def compute_mean_and_std(bucket_idx, apply_cmn=False):
-		num_signals = len(buckets_signal[bucket_idx])
-		assert num_signals > 0
-		mean = 0
-		std = 0
-
-		for signal in buckets_signal[bucket_idx]:
-			spec = fft.get_specgram(signal, config.sampling_rate, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, winfunc=config.window_func)
-
-			# ケプストラム平均正規化
-			if apply_cmn:
-				log_spec = np.log(spec + 1e-16)
-				spec = np.exp(log_spec - np.mean(log_spec, axis=0))
-
-			logmel = fft.compute_logmel(spec, config.sampling_rate, nfft=config.num_fft, winlen=config.frame_width, winstep=config.frame_shift, nfilt=config.num_mel_filters, winfunc=config.window_func)
-			logmel, delta, delta_delta = fft.compute_deltas(logmel)
-
-			assert logmel.shape[0] > 0
-			assert delta.shape[0] > 0
-			assert delta_delta.shape[0] > 0
-
-			# 目視チェック
-			# sys.path.append(os.path.join("..", "visual"))
-			# from specgram import _plot_features
-			# _plot_features("/home/stark/sandbox/plot", signal, config.sampling_rate, logmel, delta, delta_delta, spec, 
-			# 	str(np.random.randint(0, 5000)) + (".norm." if apply_cmn else "") + ".png")
-
-			logmel = logmel.T
-			delta = delta.T
-			delta_delta = delta_delta.T
-
-			if logmel.shape[1] == 0:
-				continue
-			div = 1
-			feature = logmel[:, None, :]
-			if config.using_delta:
-				feature = np.concatenate((feature, delta[:, None, :]), axis=1)
-				div += 1
-			if config.using_delta_delta:
-				feature = np.concatenate((feature, delta_delta[:, None, :]), axis=1)
-				div += 1
-
-			# 目視チェック
-			# sys.path.append("../visual")
-			# from specgram import _plot_features
-			# _plot_features("/home/stark/sandbox/plot", signal, config.sampling_rate, feature[:, 0].T, feature[:, 1].T, feature[:, 2].T, spec, str(np.random.randint(0, 5000)) + ".png")
-
-			_mean = np.mean(feature, axis=2, keepdims=True) / num_signals
-			_std = np.std(feature, axis=2, keepdims=True) / num_signals
-			assert np.isnan(np.sum(_mean)) == False
-			assert np.isnan(np.sum(_std)) == False
-			mean += _mean
-			std += _std
-
-		return mean, std
-
-	for wav_dir, trn_dir in zip(wav_paths, transcription_paths):
+	for wav_dir, trn_dir in zip(wav_path_list, transcription_path_list):
 		wav_fs = os.listdir(wav_dir)
 		trn_fs = os.listdir(trn_dir)
 		wav_ids = set()
@@ -145,18 +85,10 @@ def generate_buckets(wav_paths, transcription_paths, dataset_path, buckets_limit
 			data_id = re.sub(r"\..+$", "", filename)
 			trn_ids.add(data_id)
 
-		if data_limit_exceeded:
-			break
-
-		for data_idx, wav_id in enumerate(sorted(wav_ids)):
-
-			if data_limit_exceeded:
-				break
+		for data_id, wav_id in enumerate(sorted(wav_ids)):
 
 			if wav_id not in trn_ids:
-				sys.stdout.write("\r")
-				sys.stdout.write(stdout.CLEAR)
-				print("%s.trn not found" % wav_id)
+				printr("%s.trn not found" % wav_id)
 				continue
 
 			wav_filename = "%s.wav" % wav_id
@@ -168,57 +100,38 @@ def generate_buckets(wav_paths, transcription_paths, dataset_path, buckets_limit
 			except KeyboardInterrupt:
 				exit()
 			except Exception as e:
-				printr("Failed to read {} ({})".format(wav_filename, str(e)))
+				printr("")
+				printc("Failed to read {} ({})".format(wav_filename, str(e)), color="red")
 				continue
 
 			duration = audio.size / sampling_rate / 60
 			total_min += duration
 
-			printr("Loading {} ({}/{}) ... shape={}, rate={}, min={}, #buckets={}, #data={}".format(wav_filename, data_idx + 1, len(wav_fs), audio.shape, sampling_rate, int(duration), len(buckets_signal), current_num_data))
+			printr("Loading {} ({}/{}) ... shape={}, rate={}, min={}, #buckets={}, #data={}".format(wav_filename, data_id + 1, len(wav_fs), audio.shape, sampling_rate, int(duration), len(buckets_signal), current_num_data))
 
 			# 転記の読み込みと音声の切り出し
-			signal_transcription_pairs = generate_signal_transcription_pairs(os.path.join(trn_dir, trn_filename), audio, sampling_rate)
+			signal_transcription_pairs = generate_signal_transcription_pairs(os.path.join(trn_dir, trn_filename), audio, sampling_rate, 512)
 
 			for idx, (signal_sequence, sentence) in enumerate(signal_transcription_pairs):
 				# データを確認する場合は書き出し
 				# wavfile.write("/home/stark/sandbox/debug/{}.wav".format(sentence), config.sampling_rate, signal_sequence)
 				
-				write_to_file, bucket_idx = add_to_bukcet(signal_sequence, sentence)
+				write_to_file, bucket_id = add_to_bukcet(signal_sequence, sentence, sampling_rate)
 				if write_to_file:
-					printr("Computing mean and std of bucket {} ...".format(bucket_idx))
-
-					mean, std = compute_mean_and_std(bucket_idx, args.apply_cmn)
-					feature_mean += mean
-					feature_std += std
-					statistics_denominator += 1
-
-					printr("Writing bucket {} ...".format(bucket_idx))
-
-					save_bucket(bucket_idx)
+					printr("Writing bucket {} ...".format(bucket_id))
+					save_bucket(bucket_id)
 					current_num_data += num_signals_per_file
 
-					if data_limit is not None and current_num_data >= data_limit:
-						data_limit_exceeded = True
-						break
 
 	printr("")
 	if data_limit_exceeded == False:
-		for bucket_idx, bucket in enumerate(buckets_signal):
+		for bucket_id, bucket in enumerate(buckets_signal):
 			if len(bucket) > 0:
-				mean, std = compute_mean_and_std(bucket_idx, args.apply_cmn)
-				feature_mean += mean
-				feature_std += std
-				statistics_denominator += 1
-				if save_bucket(bucket_idx) == False:
-					num_unsaved_data = len(buckets_signal[bucket_idx])
-					print("bucket {} skipped. (#data={})".format(bucket_idx, num_unsaved_data))
+				if save_bucket(bucket_id) == False:
+					num_unsaved_data = len(buckets_signal[bucket_id])
+					print("bucket {} skipped. (#data={})".format(bucket_id, num_unsaved_data))
 					current_num_data -= num_unsaved_data
 	print("total: {} hour - {} data".format(int(total_min / 60), current_num_data))
-
-	feature_mean /= statistics_denominator
-	feature_std /= statistics_denominator
-	np.save(os.path.join(dataset_path, "mean.npy"), feature_mean.swapaxes(0, 1))
-	np.save(os.path.join(dataset_path, "std.npy"), feature_std.swapaxes(0, 1))
 
 def mkdir(d):
 	try:
@@ -229,6 +142,9 @@ def mkdir(d):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--apply-cmn", "-cmn", default=False, action="store_true")
+	parser.add_argument("--buckets-split-sec", "-bsec", type=float, default=0.5)
+	parser.add_argument("--buckets-limit", "-limit", type=int, default=20)
+	parser.add_argument("--num-signals-per-file", "-nsig", type=int, default=500)
 	parser.add_argument("--dataset-path", "-data", type=str, default=None)
 	args = parser.parse_args()
 
@@ -241,4 +157,4 @@ if __name__ == "__main__":
 
 
 	# すべての.wavを読み込み、一定の長さごとに保存
-	generate_buckets(wav_path_list, transcription_path_list, args.dataset_path, buckets_limit=20, num_signals_per_file=500)
+	main()
