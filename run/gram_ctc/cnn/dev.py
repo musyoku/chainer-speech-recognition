@@ -4,12 +4,12 @@ import chainer.functions as F
 from chainer import cuda
 from args import args
 from model import build_model
-from asr.model.cnn import load_model_parameters, load_config
+from asr.model.cnn import configure
 from asr.error import compute_minibatch_error
 from asr.data import AugmentationOption
 from asr.data.loaders.buckets import Loader
 from asr.utils import printb, printr, printc, bold
-from asr.vocab import get_unigram_ids, ID_BLANK
+from asr.vocab import load_unigram_and_bigram_ids, ID_BLANK
 
 def formatted_error(error_values):
 	errors = []
@@ -40,9 +40,10 @@ def main():
 	batchsizes_dev = [64] * 30
 
 	# モデル
-	config = load_config(config_filename)
+	config = configure()
+	config.load(config_filename)
 	model = build_model(config)
-	assert load_model_parameters(model_filename, model)
+	assert model.load(model_filename)
 
 	# データセットの読み込み
 	loader = Loader(

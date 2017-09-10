@@ -30,12 +30,12 @@ def compute_minibatch_error(y_batch, t_batch, BLANK, vocab_token_to_id, vocab_id
 		printr("")
 
 	for batch_idx, (argmax_sequence, true_sequence) in enumerate(zip(y_batch, t_batch)):
-		target_sequence = []
+		target_id_sequence = []
 		for token_id in true_sequence:
 			if token_id == BLANK:
 				continue
-			target_sequence.append(int(token_id))
-		pred_seqence = []
+			target_id_sequence.append(int(token_id))
+		pred_id_seqence = []
 		prev_token = BLANK
 		for token_id in argmax_sequence:
 			if token_id == BLANK:
@@ -43,83 +43,26 @@ def compute_minibatch_error(y_batch, t_batch, BLANK, vocab_token_to_id, vocab_id
 				continue
 			if token_id == prev_token:
 				continue
-			pred_seqence.append(int(token_id))
+			pred_id_seqence.append(int(token_id))
 			prev_token = token_id
 
 		# 一旦ユニグラムの文字列に戻す
 		pred_sentence = ""
-		for token_id in pred_seqence:
+		for token_id in pred_id_seqence:
 			pred_sentence += vocab_id_to_token[token_id]
-		pred_seqence = convert_sentence_to_unigram_ids(pred_sentence, vocab_token_to_id)
+		pred_id_seqence = convert_sentence_to_unigram_ids(pred_sentence, vocab_token_to_id)
 
-		sum_error += compute_character_error_rate(target_sequence, pred_seqence)
+		sum_error += compute_character_error_rate(target_id_sequence, pred_id_seqence)
 
 		if print_sequences and vocab_id_to_token is not None:
 			print("#{}".format(batch_idx + 1))
 			pred_str = ""
-			for token_id in pred_seqence:
+			for token_id in pred_id_seqence:
 				pred_str += vocab_id_to_token[token_id]
 			printb("pred:	" + pred_str)
 			target_str = ""
-			for token_id in target_sequence:
+			for token_id in target_id_sequence:
 				target_str += vocab_id_to_token[token_id]
 			print("true:	" + target_str)
 
 	return sum_error / len(y_batch)
-
-def compute_error(model, buckets_indices, buckets_feature, buckets_feature_length, buckets_sentence, buckets_batchsize, BLANK, mean_x_batch, stddev_x_batch, approximate=True):
-	errors = []
-	xp = model.xp
-	for bucket_idx in range(len(buckets_indices)):
-		data_indices = buckets_indices[bucket_idx]
-		batchsize = buckets_batchsize[bucket_idx]
-		feature_bucket = buckets_feature[bucket_idx]
-		feature_length_bucket = buckets_feature_length[bucket_idx]
-		sentence_bucket = buckets_sentence[bucket_idx]
-
-		total_iterations = 1 if approximate else int(math.ceil(len(data_indices) / batchsize))
-
-		if total_iterations == 1 and len(data_indices) < batchsize:
-			batchsize = len(data_indices)
-
-		sum_error = 0
-		for itr in range(1, total_iterations + 1):
-
-			x_batch, x_length_batch, t_batch, t_length_batch = get_minibatch(data_indices, feature_bucket, feature_length_bucket, sentence_bucket, batchsize, BLANK)
-			x_batch = (x_batch - mean_x_batch) / stddev_x_batch
-
-			if model.xp is cuda.cupy:
-				x_batch = cuda.to_gpu(x_batch.astype(np.float32))
-				t_batch = cuda.to_gpu(np.asarray(t_batch).astype(np.int32))
-				x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
-				t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
-
-			y_batch = model(x_batch, split_into_variables=False)
-			y_batch = xp.argmax(y_batch.data, axis=2)
-
-			for argmax_sequence, true_sequence in zip(y_batch, t_batch):
-				target_sequence = []
-				for token in true_sequence:
-					if token == BLANK:
-						continue
-					target_sequence.append(int(token))
-				pred_seqence = []
-				prev_token = BLANK
-				for token in argmax_sequence:
-					if token == BLANK:
-						prev_token = BLANK
-						continue
-					if token == prev_token:
-						continue
-					pred_seqence.append(int(token))
-					prev_token = token
-				# if approximate == True:
-				# 	print("true:", target_sequence, "pred:", pred_seqence)
-				error = compute_character_error_rate(target_sequence, pred_seqence)
-				sum_error += error
-
-			printr("Computing error - bucket {}/{} - iteration {}/{}".format(bucket_idx + 1, len(buckets_indices), itr, total_iterations))
-			data_indices = np.roll(data_indices, batchsize)
-
-		errors.append(sum_error * 100.0 / batchsize / total_iterations)
-	return errors
