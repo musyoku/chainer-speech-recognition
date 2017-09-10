@@ -36,9 +36,8 @@ class Configuration():
 				except Exception as e:
 					raise Exception("could not load {}".format(filename))
 
-			config = Configuration()
-			_set(config, params)
-			return config
+			_set(self, params)
+			return True
 		else:
 			return None
 

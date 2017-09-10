@@ -4,7 +4,7 @@ import chainer.functions as F
 from chainer import cuda
 from args import args
 from model import build_model
-from asr.model.cnn import load_model_parameters, load_config
+from asr.model.cnn import configure
 from asr.error import compute_minibatch_error
 from asr.data import AugmentationOption
 from asr.data.loaders.audio import Loader
@@ -40,9 +40,10 @@ def main():
 	batchsizes = [64] * 30
 
 	# モデル
-	config = load_config(config_filename)
+	config = configure()
+	config.load(config_filename)
 	model = build_model(config)
-	assert load_model_parameters(model_filename, model)
+	assert model.load(model_filename)
 
 	# テストデータの読み込み
 	loader = Loader(

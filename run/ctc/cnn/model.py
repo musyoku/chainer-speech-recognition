@@ -27,7 +27,7 @@ def build_model(config):
 	assert isinstance(ndim_dense, int)
 	assert isinstance(kernel_size, (tuple, list))
 	assert isinstance(num_conv_layers, int)
-	assert isinstance(dropout, float)
+	assert isinstance(dropout, (float, int))
 	assert isinstance(weightnorm, bool)
 	assert isinstance(wgain, (int, float))
 	assert isinstance(num_mel_filters, int)
