@@ -16,7 +16,7 @@ class Configuration():
 		printb("[Configuration]")
 		dump_dict(to_dict(self), 1)
 
-	def save(filename, overwrite=False):
+	def save(self, filename, overwrite=False):
 		assert self.vocab_size > 0
 
 		if os.path.isfile(filename) and overwrite is False:
@@ -27,7 +27,7 @@ class Configuration():
 		with open(filename, "w") as f:
 			json.dump(params, f, indent=4, sort_keys=True, separators=(',', ': '))
 
-	def load(filename):
+	def load(self, filename):
 		if os.path.isfile(filename):
 			print("Loading {} ...".format(filename))
 			with open(filename, "r") as f:

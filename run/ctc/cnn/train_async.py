@@ -6,7 +6,7 @@ from chainer import cuda
 from multiprocessing import Process, Queue
 from args import args
 from model import build_model
-from asr.model.cnn import load_model_parameters, save_model_parameters, save_config, configure
+from asr.model.cnn import configure
 from asr.error import compute_minibatch_error
 from asr.data import AugmentationOption
 from asr.data.loaders.buckets import Loader
@@ -73,7 +73,7 @@ def main():
 		config.ndim_audio_features += 1
 	if args.using_delta_delta:
 		config.ndim_audio_features += 1
-	save_config(config_filename, config)
+	config.save(config_filename)
 
 	# バケツごとのミニバッチサイズ
 	# 自動的に調整される
@@ -110,7 +110,7 @@ def main():
 
 	# モデル
 	model = build_model(config)
-	load_model_parameters(model_filename, model)
+	model.load(model_filename)
 
 	if args.gpu_device >= 0:
 		cuda.get_device(args.gpu_device).use()
@@ -246,7 +246,7 @@ def main():
 
 			current_iteration += len(minibatch_list)
 
-		save_model_parameters(os.path.join(args.working_directory, "model.hdf5"), model)
+		model.save(model_filename)
 
 		report("Epoch {}".format(epoch))
 		report(loader.get_statistics())

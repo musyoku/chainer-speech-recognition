@@ -21,32 +21,9 @@ class Configuration(base.Configuration):
 		self.wgain = 1
 		self.architecture = "zhang"
 
-	def save(filename, overwrite=False):
+	def save(self, filename, overwrite=False):
 		assert self.vocab_size > 0
-
-		if os.path.isfile(filename) and overwrite is False:
-			return
-
-		params = to_dict(self)
-		
-		with open(filename, "w") as f:
-			json.dump(params, f, indent=4, sort_keys=True, separators=(',', ': '))
-
-	def load(filename):
-		if os.path.isfile(filename):
-			print("Loading {} ...".format(filename))
-			with open(filename, "r") as f:
-				try:
-					params = json.load(f)
-				except Exception as e:
-					raise Exception("could not load {}".format(filename))
-
-			config = Configuration()
-			_set(config, params)
-			return config
-		else:
-			return None
-
+		super().save(filename, overwrite)
 
 def configure():
 	return Configuration()
@@ -74,12 +51,12 @@ class AcousticModel(Stream):
 
 	def save(self, filename):
 		tmp_filename = str(uuid.uuid4())
-		serializers.save_hdf5(tmp_filename, model)
+		serializers.save_hdf5(tmp_filename, self)
 		if os.path.isfile(filename):
 			os.remove(filename)
 		os.rename(tmp_filename, filename)
 
-	def load(filename):
+	def load(self, filename):
 		if os.path.isfile(filename):
 			print("Loading {} ...".format(filename))
 			serializers.load_hdf5(filename, self)
