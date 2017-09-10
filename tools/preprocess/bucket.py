@@ -1,33 +1,26 @@
-# coding: utf-8
-from __future__ import division
-from __future__ import print_function
 import os, codecs, re, sys, math, chainer, pickle, acoustics, argparse
 import numpy as np
 import scipy.io.wavfile as wavfile
 from chainer import cuda
-sys.path.append("../")
+sys.path.append(os.path.join("..", "..", ".."))
 import config, fft
 from util import stdout, printb, printr
 from dataset import get_bucket_index, generate_signal_transcription_pairs
 
+# CSJのwavが入っているディレクトリ
 wav_path_list = [
-	"/home/aibo/sandbox/CSJ/WAV/core",
-	"/home/aibo/sandbox/CSJ/WAV/noncore",
+	"/home/stark/sandbox/CSJ/WAV/core",
+	"/home/stark/sandbox/CSJ/WAV/noncore",
 ]
 # 変換済みの書き起こしデータ
 # https://github.com/musyoku/csj-preprocesser
 transcription_path_list = [
-	"/home/aibo/sandbox/CSJ_/core",
-	"/home/aibo/sandbox/CSJ_/noncore",
+	"/home/stark/sandbox/CSJ_/core",
+	"/home/stark/sandbox/CSJ_/noncore",
 ]
 
-def normalize_feature(array):
-	mean = np.mean(array)
-	stddev = np.std(array)
-	array = (array - mean) / stddev
-	return array
 
-def generate_buckets(wav_paths, transcription_paths, dataset_path, buckets_limit, data_limit, num_signals_per_file=1000):
+def generate_buckets(wav_paths, transcription_paths, dataset_path, buckets_limit, num_signals_per_file=1000):
 	assert len(wav_paths) > 0
 	assert len(transcription_paths) > 0
 
@@ -108,7 +101,7 @@ def generate_buckets(wav_paths, transcription_paths, dataset_path, buckets_limit
 			# 目視チェック
 			# sys.path.append(os.path.join("..", "visual"))
 			# from specgram import _plot_features
-			# _plot_features("/home/aibo/sandbox/plot", signal, config.sampling_rate, logmel, delta, delta_delta, spec, 
+			# _plot_features("/home/stark/sandbox/plot", signal, config.sampling_rate, logmel, delta, delta_delta, spec, 
 			# 	str(np.random.randint(0, 5000)) + (".norm." if apply_cmn else "") + ".png")
 
 			logmel = logmel.T
@@ -129,7 +122,7 @@ def generate_buckets(wav_paths, transcription_paths, dataset_path, buckets_limit
 			# 目視チェック
 			# sys.path.append("../visual")
 			# from specgram import _plot_features
-			# _plot_features("/home/aibo/sandbox/plot", signal, config.sampling_rate, feature[:, 0].T, feature[:, 1].T, feature[:, 2].T, spec, str(np.random.randint(0, 5000)) + ".png")
+			# _plot_features("/home/stark/sandbox/plot", signal, config.sampling_rate, feature[:, 0].T, feature[:, 1].T, feature[:, 2].T, spec, str(np.random.randint(0, 5000)) + ".png")
 
 			_mean = np.mean(feature, axis=2, keepdims=True) / num_signals
 			_std = np.std(feature, axis=2, keepdims=True) / num_signals
@@ -248,4 +241,4 @@ if __name__ == "__main__":
 
 
 	# すべての.wavを読み込み、一定の長さごとに保存
-	generate_buckets(wav_path_list, transcription_path_list, args.dataset_path, buckets_limit=20, data_limit=None, num_signals_per_file=500)
+	generate_buckets(wav_path_list, transcription_path_list, args.dataset_path, buckets_limit=20, num_signals_per_file=500)
