@@ -16,12 +16,7 @@ class Configuration():
 		printb("[Configuration]")
 		dump_dict(to_dict(self), 1)
 
-	def save(self, filename, overwrite=False):
-		assert self.vocab_size > 0
-
-		if os.path.isfile(filename) and overwrite is False:
-			return
-
+	def save(self, filename):
 		params = to_dict(self)
 		
 		with open(filename, "w") as f:

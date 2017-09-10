@@ -169,7 +169,7 @@ def main():
 					loss = F.connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
 			except Exception as e:
 				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
-					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id] - 16, 8)
+					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id] - 16, 4)
 					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
 			break
 	batchsizes_dev = [size * 3 for size in batchsizes_train]
@@ -238,7 +238,7 @@ def main():
 					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
 					if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
 						batchsizes_train[bucket_id] -= 16
-						batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 8)
+						batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
 						batchsizes_dev = [size * 3 for size in batchsizes_train]
 						print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
 						loader.set_batchsizes_train(batchsizes_train)

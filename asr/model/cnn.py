@@ -21,9 +21,9 @@ class Configuration(base.Configuration):
 		self.wgain = 1
 		self.architecture = "zhang"
 
-	def save(self, filename, overwrite=False):
+	def save(self, filename):
 		assert self.vocab_size > 0
-		super().save(filename, overwrite)
+		super().save(filename)
 
 def configure():
 	return Configuration()
