@@ -134,6 +134,7 @@ def main():
 	env.learning_rate = args.learning_rate
 	env.final_learning_rate = args.final_learning_rate
 	env.lr_decay = args.lr_decay
+	env.momentum = args.momentum
 	env.augmentation = augmentation
 	env.joint_training = args.joint_training
 	env.save()

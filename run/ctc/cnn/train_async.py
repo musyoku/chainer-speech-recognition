@@ -131,6 +131,7 @@ def main():
 
 	env = Environment(env_filename, signal_handler)
 	env.learning_rate = args.learning_rate
+	env.momentum = args.momentum
 	env.final_learning_rate = args.final_learning_rate
 	env.lr_decay = args.lr_decay
 	env.augmentation = augmentation
