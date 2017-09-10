@@ -238,7 +238,7 @@ def main():
 					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
 					if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
 						batchsizes_train[bucket_id] -= 16
-						batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
+						batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 8)
 						batchsizes_dev = [size * 3 for size in batchsizes_train]
 						print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
 						loader.set_batchsizes_train(batchsizes_train)
