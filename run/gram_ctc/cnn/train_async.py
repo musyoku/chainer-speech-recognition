@@ -112,6 +112,7 @@ def main():
 	# モデル
 	model = build_model(config)
 	model.load(model_filename)
+	model.save(model_filename)
 
 	if args.gpu_device >= 0:
 		cuda.get_device(args.gpu_device).use()
