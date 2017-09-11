@@ -37,7 +37,7 @@ def main():
 
 	# バケツごとのミニバッチサイズ
 	# 自動的に調整される
-	batchsizes_dev = [64] * 30
+	batchsizes_dev = [128] * 30
 
 	# モデル
 	config = configure()
