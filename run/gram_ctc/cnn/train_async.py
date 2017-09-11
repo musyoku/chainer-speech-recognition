@@ -112,7 +112,6 @@ def main():
 	# モデル
 	model = build_model(config)
 	model.load(model_filename)
-	model.save(model_filename)
 
 	if args.gpu_device >= 0:
 		cuda.get_device(args.gpu_device).use()
@@ -259,6 +258,7 @@ def main():
 			current_iteration += len(minibatch_list)
 
 		model.save(model_filename)
+		loader.save_stats(stats_directory)
 
 		report("Epoch {}".format(epoch))
 		report(loader.get_statistics())

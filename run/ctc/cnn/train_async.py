@@ -248,6 +248,7 @@ def main():
 			current_iteration += len(minibatch_list)
 
 		model.save(model_filename)
+		loader.save_stats(stats_directory)
 
 		report("Epoch {}".format(epoch))
 		report(loader.get_statistics())

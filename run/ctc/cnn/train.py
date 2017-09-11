@@ -211,6 +211,7 @@ def main():
 					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
 
 		model.save(model_filename)
+		loader.save_stats(stats_directory)
 
 		report("Epoch {}".format(epoch))
 		report(loader.get_statistics())
