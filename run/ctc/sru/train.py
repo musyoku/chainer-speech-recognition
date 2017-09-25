@@ -174,49 +174,49 @@ def main():
 	for epoch in epochs:
 		sum_loss = 0
 
-		# # パラメータの更新
-		# batch_iter_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
-		# total_iterations_train = batch_iter_train.get_total_iterations()
+		# パラメータの更新
+		batch_iter_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
+		total_iterations_train = batch_iter_train.get_total_iterations()
 
-		# for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter_train):
+		for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter_train):
 
-		# 	try:
-		# 		with chainer.using_config("train", True):
-		# 			# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
-		# 			printr("Training ... {:.1f}% ({}/{})".format((batch_index + 1) / total_iterations_train * 100, batch_index + 1, total_iterations_train))
+			try:
+				with chainer.using_config("train", True):
+					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
+					printr("Training ... {:.1f}% ({}/{})".format((batch_index + 1) / total_iterations_train * 100, batch_index + 1, total_iterations_train))
 
-		# 			# 誤差の計算
-		# 			model.reset_state()
-		# 			y_batch = model(x_batch)
-		# 			loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+					# 誤差の計算
+					model.reset_state()
+					y_batch = model(x_batch)
+					loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
-		# 			# NaN
-		# 			loss_value = float(loss.data)
-		# 			if loss_value != loss_value:
-		# 				printc("Encountered NaN when computing loss.", color="red")
-		# 				continue
+					# NaN
+					loss_value = float(loss.data)
+					if loss_value != loss_value:
+						printc("Encountered NaN when computing loss.", color="red")
+						continue
 
-		# 			# 更新
-		# 			optimizer.update(lossfun=lambda: loss)
+					# 更新
+					optimizer.update(lossfun=lambda: loss)
 					
-		# 			sum_loss += loss_value
+					sum_loss += loss_value
 
-		# 	except Exception as e:
-		# 		printr("")
-		# 		printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
-		# 		if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
-		# 			batchsizes_train[bucket_id] -= 16
-		# 			batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
-		# 			batchsizes_dev = [size * 3 for size in batchsizes_train]
-		# 			print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
-		# 		else:
-		# 			raise e
+			except Exception as e:
+				printr("")
+				printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
+				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
+					batchsizes_train[bucket_id] -= 16
+					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
+					batchsizes_dev = [size * 3 for size in batchsizes_train]
+					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
+				else:
+					raise e
 
-		# model.save(model_filename)
-		# loader.save_stats(stats_directory)
+		model.save(model_filename)
+		loader.save_stats(stats_directory)
 
-		# report("Epoch {}".format(epoch))
-		# report(loader.get_statistics())
+		report("Epoch {}".format(epoch))
+		report(loader.get_statistics())
 
 		# ノイズ無しデータでバリデーション
 		batch_iter_dev = loader.get_development_batch_iterator(batchsizes_dev, augmentation=AugmentationOption(), gpu=using_gpu)
