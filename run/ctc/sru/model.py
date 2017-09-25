@@ -67,29 +67,39 @@ class Model(AcousticModel):
 			self.rnn_blocks = rnn_blocks
 
 			# dense layers
-			fc_blocks = nn.Module()
-			fc_blocks.add(
+			dense_blocks = nn.Module()
+			
+			# dense_blocks.add(
+			# 	nn.Convolution2D(None, ndim_dense * 2, ksize=1),
+			# 	nn.Maxout(2),
+			# 	nn.Dropout(dropout),
+			# )
+			# dense_blocks.add(
+			# 	nn.Convolution2D(ndim_dense, ndim_dense * 2, ksize=1),
+			# 	nn.Maxout(2),
+			# 	nn.Dropout(dropout),
+			# )
+			# dense_blocks.add(
+			# 	nn.Convolution2D(ndim_dense, vocab_size, ksize=1),
+			# 	nn.LayerNormalization(None),
+			# )
+
+			dense_blocks.add(
 				nn.Convolution1D(None, ndim_dense * 2),
 				nn.Maxout(2),
 				nn.Dropout(dropout),
 			)
-			fc_blocks.add(
+			dense_blocks.add(
 				nn.Convolution1D(ndim_dense, ndim_dense * 2),
 				nn.Maxout(2),
 				nn.Dropout(dropout),
 			)
-			fc_blocks.add(
+			dense_blocks.add(
 				nn.Convolution1D(ndim_dense, vocab_size),
 			)
-			self.fc_blocks = fc_blocks
+			self.dense_blocks = dense_blocks
 
 	def __call__(self, x, split_into_variables=True):
-		import numpy as np
-		np.set_printoptions(suppress=True)
-
-		x = x[..., :5]
-
-
 		batchsize = x.shape[0]
 		seq_length = x.shape[3]
 
@@ -105,19 +115,20 @@ class Model(AcousticModel):
 			self.contexts[index] = context
 			if dropout is not None:
 				out_data = dropout(out_data)
-			print(out_data.shape)
 
 		# fc
-		out_data = self.fc_blocks(out_data)
-		assert out_data.shape[3] == seq_length
+		out_data = self.dense_blocks(out_data)
+		assert out_data.shape[2] == seq_length
+
+		print(out_data.shape)
 
 		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある
 		if split_into_variables:
-			out_data = F.swapaxes(out_data, 1, 3)
+			out_data = F.swapaxes(out_data, 1, 2)
 			out_data = F.reshape(out_data, (batchsize, -1))
 			out_data = F.split_axis(out_data, seq_length, axis=1)
 		else:
-			out_data = F.swapaxes(out_data, 1, 3)
+			out_data = F.swapaxes(out_data, 1, 2)
 			out_data = F.squeeze(out_data, axis=2)
 
 		return out_data

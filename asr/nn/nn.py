@@ -1,6 +1,7 @@
 import chainer, math
 from chainer import functions, cuda, links, variable
 from chainer.links import *
+from .convolution_1d import Convolution1D
 from .convolution_2d import Convolution2D as WeightnormConvolution2D
 from .layernorm import normalize_layer
 from .sru import SRU
@@ -231,9 +232,6 @@ class GaussianNoise():
 
 # Link
 
-def Convolution1D(in_channels, out_channels):
-	return links.ConvolutionND(1, in_channels, out_channels, 1, stride=1, pad=0, nobias=False)
-	
 def Convolution2D(in_channel, out_channel, ksize, stride=1, pad=0, initialW=None, weightnorm=False):
 	if weightnorm:
 		return WeightnormConvolution2D(in_channel, out_channel, ksize, stride=1, pad=pad, initialV=initialW)
