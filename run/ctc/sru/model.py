@@ -40,22 +40,25 @@ class Model(AcousticModel):
 				nn.Convolution2D(ndim_audio_features, ndim_conv * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1)),
 				lambda x: x[..., :-pad],
 				nn.Maxout(2),
-				nn.Dropout(dropout),
+				nn.LayerNormalization(),
 				nn.MaxPooling2D(ksize=(3, 1)),
+				nn.Dropout(dropout),
 			)
 			conv_blocks.add(
 				nn.Convolution2D(ndim_conv, ndim_conv * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1)),
 				lambda x: x[..., :-pad],
 				nn.Maxout(2),
-				nn.Dropout(dropout),
+				nn.LayerNormalization(),
 				nn.MaxPooling2D(ksize=(2, 1)),
+				nn.Dropout(dropout),
 			)
 			conv_blocks.add(
 				nn.Convolution2D(ndim_conv, ndim_rnn * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1)),
 				lambda x: x[..., :-pad],
 				nn.Maxout(2),
-				nn.Dropout(dropout),
+				nn.LayerNormalization(),
 				nn.MaxPooling2D(ksize=(2, 1)),
+				nn.Dropout(dropout),
 			)
 			self.conv_blocks = conv_blocks
 
@@ -70,35 +73,21 @@ class Model(AcousticModel):
 
 			# dense layers
 			dense_blocks = nn.Module()
-
-			# dense_blocks.add(
-			# 	nn.Convolution2D(None, ndim_dense * 2, ksize=1),
-			# 	nn.Maxout(2),
-			# 	nn.Dropout(dropout),
-			# )
-			# dense_blocks.add(
-			# 	nn.Convolution2D(ndim_dense, ndim_dense * 2, ksize=1),
-			# 	nn.Maxout(2),
-			# 	nn.Dropout(dropout),
-			# )
-			# dense_blocks.add(
-			# 	nn.Convolution2D(ndim_dense, vocab_size, ksize=1),
-			# 	nn.LayerNormalization(None),
-			# )
-
 			dense_blocks.add(
 				nn.Convolution1D(None, ndim_dense * 2),
 				nn.Maxout(2),
+				nn.LayerNormalization(),
 				nn.Dropout(dropout),
 			)
 			dense_blocks.add(
 				nn.Convolution1D(ndim_dense, ndim_dense * 2),
 				nn.Maxout(2),
+				nn.LayerNormalization(),
 				nn.Dropout(dropout),
 			)
 			dense_blocks.add(
 				nn.Convolution1D(ndim_dense, vocab_size),
-				nn.LayerNormalization(),
+				# nn.LayerNormalization(),
 			)
 			self.dense_blocks = dense_blocks
 
@@ -123,6 +112,10 @@ class Model(AcousticModel):
 			if dropout is not None:
 				out_data = dropout(out_data)
 
+		# import numpy as np
+		# np.set_printoptions(suppress=True)
+		# print(out_data)
+
 		# fc
 		out_data = self.dense_blocks(out_data)
 		assert out_data.shape[2] == seq_length
@@ -134,6 +127,5 @@ class Model(AcousticModel):
 			out_data = F.split_axis(out_data, seq_length, axis=1)
 		else:
 			out_data = F.swapaxes(out_data, 1, 2)
-			out_data = F.squeeze(out_data, axis=2)
 
 		return out_data

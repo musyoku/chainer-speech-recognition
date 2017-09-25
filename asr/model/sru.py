@@ -12,7 +12,7 @@ class Configuration(base.Configuration):
 		self.vocab_size = -1
 		self.ndim_audio_features = 40
 		self.ndim_conv = 64
-		self.ndim_h = 128
+		self.ndim_rnn = 128
 		self.ndim_dense = 256
 		self.num_rnn_layers = 2
 		self.kernel_size = (3, 5)
