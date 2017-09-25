@@ -3,6 +3,7 @@ from chainer import functions, cuda, links, variable
 from chainer.links import *
 from .convolution_2d import Convolution2D as WeightnormConvolution2D
 from .layernorm import normalize_layer
+from .sru import SRU
 
 # Standar functions
 
@@ -230,6 +231,9 @@ class GaussianNoise():
 
 # Link
 
+def Convolution1D(in_channels, out_channels):
+	return links.ConvolutionND(1, in_channels, out_channels, 1, stride=1, pad=0, nobias=False)
+	
 def Convolution2D(in_channel, out_channel, ksize, stride=1, pad=0, initialW=None, weightnorm=False):
 	if weightnorm:
 		return WeightnormConvolution2D(in_channel, out_channel, ksize, stride=1, pad=pad, initialV=initialW)
@@ -316,6 +320,92 @@ class Stream(chainer.Chain):
 							setattr(self, "layer_{}_{}".format(index, _index), _layer)
 							
 		self.layers += layers
+
+	def __call__(self, x):
+		for layer in self.layers:
+			y = layer(x)
+			if isinstance(layer, Residual):
+				y += x
+			x = y
+		return x
+		
+class Module(chainer.Chain):
+	def __init__(self, *layers):
+		super(Module, self).__init__()
+		self.layers = []
+		self.blocks = []
+		self.links = []
+		self.modules = []
+		self._locked = False
+		if len(layers) > 0:
+			self.add(*layers)
+
+	def add(self, *layers):
+		with self.init_scope():
+			for i, layer in enumerate(layers):
+				index = i + len(self.layers)
+
+				if isinstance(layer, chainer.Link):
+					setattr(self, "_sequential_%d" % index, layer)
+
+				if isinstance(layer, Residual):
+					for _index, _layer in enumerate(layer.layers):
+						if isinstance(_layer, chainer.Link):
+							setattr(self, "_sequential_{}_{}".format(index, _index), _layer)
+		self.layers += layers
+		self.blocks.append(layers)
+
+	def __setattr__(self, name, value):
+		if isinstance(value, Module):
+			self.modules.append((name, value))
+			self._set_module(name, value)
+			return super(chainer.Link, self).__setattr__(name, value)	# prevent module from being added to self._children
+
+		if isinstance(value, chainer.Link):
+			assert self._locked is False, "Since this module is owned by another module, it is not possible to add Link."
+			with self.init_scope():
+				if name.startswith("_sequential_"):
+					return super(Module, self).__setattr__(name, value)
+				self.links.append((name, value))
+				return super(Module, self).__setattr__(name, value)
+
+		super(Module, self).__setattr__(name, value)
+
+	def _set_module(self, namespace, module):
+		assert isinstance(module, Module)
+
+		for index, layer in enumerate(module.layers):
+			if isinstance(layer, chainer.Link):
+				super(Module, self).__setattr__("_module_{}_sequential_{}".format(namespace, index), layer)
+
+			if isinstance(layer, Residual):
+				for _index, _layer in enumerate(layer.layers):
+					if isinstance(_layer, chainer.Link):
+						super(Module, self).__setattr__("_module_{}_sequential_{}_{}".format(namespace, index, _index), _layer)
+		
+		for index, (link_name, link) in enumerate(module.links):
+			assert isinstance(link, chainer.Link)
+			super(Module, self).__setattr__("_module_{}_link_{}".format(namespace, link_name), link)
+
+		for index, (module_name, module) in enumerate(module.modules):
+			assert isinstance(module, Module)
+			self._set_module("{}_{}".format(namespace, module_name), module)
+
+		module._locked = True
+
+	def save(self, filename):
+		tmp_filename = filename + "." + str(uuid.uuid4())
+		serializers.save_hdf5(tmp_filename, self)
+		if os.path.isfile(filename):
+			os.remove(filename)
+		os.rename(tmp_filename, filename)
+
+	def load(self, filename):
+		if os.path.isfile(filename):
+			print("Loading {} ...".format(filename))
+			serializers.load_hdf5(filename, self)
+			return True
+		return False
 
 	def __call__(self, x):
 		for layer in self.layers:

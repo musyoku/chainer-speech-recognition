@@ -11,14 +11,12 @@ class Configuration(base.Configuration):
 		super().__init__()
 		self.vocab_size = -1
 		self.ndim_audio_features = 40
+		self.ndim_conv = 64
 		self.ndim_h = 128
 		self.ndim_dense = 256
-		self.num_conv_layers = 5
+		self.num_rnn_layers = 2
 		self.kernel_size = (3, 5)
 		self.dropout = 0
-		self.weightnorm = False
-		self.wgain = 1
-		self.architecture = "zhang"
 
 	def save(self, filename):
 		assert self.vocab_size > 0
@@ -27,9 +25,7 @@ class Configuration(base.Configuration):
 def configure():
 	return Configuration()
 		
-# Towards End-to-End Speech Recognition with Deep Convolutional Neural Networks
-# https://arxiv.org/abs/1701.02720
-class AcousticModel(nn.Stream):
+class AcousticModel(nn.Module):
 	def __call__(self, x, split_into_variables=True):
 		batchsize = x.shape[0]
 		seq_length = x.shape[3]
