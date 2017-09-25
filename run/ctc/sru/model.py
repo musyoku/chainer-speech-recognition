@@ -29,7 +29,8 @@ class Model(AcousticModel):
 		assert isinstance(dropout, (float, int))
 		assert isinstance(num_mel_filters, int)
 
-		self.contexts = [None] * num_rnn_layers
+		self.num_rnn_layers = num_rnn_layers
+		self.reset_state()
 
 		with self.init_scope():
 			# first layer
@@ -54,6 +55,7 @@ class Model(AcousticModel):
 				lambda x: x[..., :-pad],
 				nn.Maxout(2),
 				nn.Dropout(dropout),
+				nn.MaxPooling2D(ksize=(2, 1)),
 			)
 			self.conv_blocks = conv_blocks
 
@@ -61,14 +63,14 @@ class Model(AcousticModel):
 			rnn_blocks = nn.Module()
 			for i in range(num_rnn_layers):
 				rnn_blocks.add(
-					nn.SRU(None, ndim_rnn),
+					nn.SRU(None),
 					nn.Dropout(dropout),
 				)
 			self.rnn_blocks = rnn_blocks
 
 			# dense layers
 			dense_blocks = nn.Module()
-			
+
 			# dense_blocks.add(
 			# 	nn.Convolution2D(None, ndim_dense * 2, ksize=1),
 			# 	nn.Maxout(2),
@@ -96,10 +98,14 @@ class Model(AcousticModel):
 			)
 			dense_blocks.add(
 				nn.Convolution1D(ndim_dense, vocab_size),
+				nn.LayerNormalization(),
 			)
 			self.dense_blocks = dense_blocks
 
-	def __call__(self, x, split_into_variables=True):
+	def reset_state(self):
+		self.contexts = [None] * self.num_rnn_layers
+
+	def __call__(self, x, split_into_variables=True, discard_context=False):
 		batchsize = x.shape[0]
 		seq_length = x.shape[3]
 
@@ -112,15 +118,14 @@ class Model(AcousticModel):
 			sru = blocks[0]
 			dropout = blocks[1] if len(blocks) == 2 else None
 			hidden, cell, context = sru(out_data, self.contexts[index])
-			self.contexts[index] = context
+			if discard_context is False:
+				self.contexts[index] = context
 			if dropout is not None:
 				out_data = dropout(out_data)
 
 		# fc
 		out_data = self.dense_blocks(out_data)
 		assert out_data.shape[2] == seq_length
-
-		print(out_data.shape)
 
 		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある
 		if split_into_variables:

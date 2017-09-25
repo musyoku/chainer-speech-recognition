@@ -439,23 +439,23 @@ def sru(x, W, B, initial_ct, use_tanh=True, mask_x=None):
 	return func(x, W, B, initial_ct, mask_x)
 
 class SRU(link.Link):
-	def __init__(self, in_channels, out_channels, use_tanh=True, dropout=0, initialW=None, initial_bias=0):
+	def __init__(self, channels, use_tanh=True, dropout=0, initialW=None, initial_bias=0):
 		super().__init__()
-		self.in_channels = in_channels
-		self.out_channels = out_channels
+		self.channels = channels
 		self.use_tanh = use_tanh
 		self.dropout = dropout
 
 		with self.init_scope():
 			self.W = variable.Parameter(initializers._get_initializer(initialW))
-			self.B = variable.Parameter(initializers._get_initializer(initial_bias), out_channels * 2)
+			self.B = variable.Parameter(initializers._get_initializer(initial_bias))
 
-			if in_channels is not None:
-				self._initialize_params(in_channels)
+			if channels is not None:
+				self._initialize_params(channels)
 
-	def _initialize_params(self, in_channels):
-		self.in_channels = in_channels
-		self.W.initialize((self.out_channels * 3, in_channels))
+	def _initialize_params(self, channels):
+		self.channels = channels
+		self.W.initialize((channels * 3, channels))
+		self.B.initialize((channels * 2))
 
 	def __call__(self, x, initial_ct, mask_x=None):
 		if self.W.data is None:
@@ -474,4 +474,3 @@ class SRU(link.Link):
 		xp = cuda.get_array_module(x)
 		mask = xp.random.rand(*x.shape[:2]) >= self.dropout
 		return mask.astype(xp.float32)
-		

@@ -155,8 +155,15 @@ def main():
 	batch_iter_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
 	for _ in range(30):
 		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_iter_train:
-			with chainer.using_config("train", True):
-				loss = F.connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
+			try:
+				with chainer.using_config("train", True):
+					model.reset_state()
+					loss = F.connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
+			except Exception as e:
+				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
+					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id] - 16, 4)
+					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
+			break
 	batchsizes_dev = [size * 3 for size in batchsizes_train]
 
 	# 学習
@@ -179,6 +186,7 @@ def main():
 					printr("iteration {}/{}".format(batch_index + 1, total_iterations_train))
 
 					# 誤差の計算
+					model.reset_state()
 					y_batch = model(x_batch)
 					loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
