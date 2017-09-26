@@ -87,7 +87,7 @@ class Model(AcousticModel):
 			)
 			dense_blocks.add(
 				nn.Convolution1D(ndim_dense, vocab_size),
-				# nn.LayerNormalization(),
+				nn.LayerNormalization(),
 			)
 			self.dense_blocks = dense_blocks
 

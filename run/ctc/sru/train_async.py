@@ -1,7 +1,8 @@
-import sys, cupy, os
-import chainer
+import cupy, os, binascii
+import chainer, cupy
 import numpy as np
 from chainer import cuda
+from multiprocessing import Process, Queue
 from args import args
 from model import Model
 from asr.model.sru import configure
@@ -15,11 +16,20 @@ from asr.training import Environment, Iteration
 from asr.logging import Report
 from asr.loss import connectionist_temporal_classification
 
+
 def formatted_error(error_values):
 	errors = []
 	for error in error_values:
 		errors.append("%.2f" % error)
 	return errors
+
+def preloading_loop(loader, augmentation, num_load, queue):
+	# print("preloading started.")
+	np.random.seed(int(binascii.hexlify(os.urandom(4)), 16))
+	for i in range(num_load):
+		queue.put(loader.sample_minibatch(augmentation=augmentation, gpu=False))
+	# print("preloading done.")
+	return queue
 
 def main():
 	assert args.dataset_path is not None
@@ -165,52 +175,80 @@ def main():
 					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
 			break
 	batchsizes_dev = [size * 3 for size in batchsizes_train]
+			
+	# マルチプロセスでデータの先読み
+	num_preloads = 50
+	queue = preloading_loop(loader, augmentation, num_preloads, Queue())
+	preloading_process = None
 
 	# 学習
 	printb("[Training]")
 	epochs = Iteration(args.epochs)
 	report = Report(log_filename)
-	
+	total_iterations_train = loader.get_total_training_iterations()
+
 	for epoch in epochs:
 		sum_loss = 0
 
 		# パラメータの更新
-		batch_iter_train = loader.get_training_batch_iterator(batchsizes_train, augmentation=augmentation, gpu=using_gpu)
-		total_iterations_train = batch_iter_train.get_total_iterations()
+		current_iteration = 0
+		while total_iterations_train > current_iteration:
+			minibatch_list = []
+			for _ in range(num_preloads):
+				minibatch_list.append(queue.get())
 
-		for batch_index, (x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id) in enumerate(batch_iter_train):
+			if preloading_process is not None:
+				preloading_process.join()
 
-			try:
-				with chainer.using_config("train", True):
-					# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
-					printr("Training ... {:.1f}% ({}/{})".format((batch_index + 1) / total_iterations_train * 100, batch_index + 1, total_iterations_train))
+			queue = Queue()
+			preloading_process = Process(target=preloading_loop, args=(loader, augmentation, num_preloads, queue))
+			preloading_process.start()
 
-					# 誤差の計算
-					model.reset_state()
-					y_batch = model(x_batch)
-					loss = connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+			for batch_idx, data in enumerate(minibatch_list):
+				try:
+					with chainer.using_config("train", True):
+						# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
+						printr("iteration {}/{}".format(batch_idx + current_iteration + 1, total_iterations_train))
 
-					# NaN
-					loss_value = float(loss.data)
-					if loss_value != loss_value:
-						printc("Encountered NaN when computing loss.", color="red")
-						continue
+						x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id = data
 
-					# 更新
-					optimizer.update(lossfun=lambda: loss)
-					
-					sum_loss += loss_value
+						if args.gpu_device >= 0:
+							x_batch = cuda.to_gpu(x_batch.astype(np.float32))
+							t_batch = cuda.to_gpu(t_batch.astype(np.int32))
+							x_length_batch = cuda.to_gpu(np.asarray(x_length_batch).astype(np.int32))
+							t_length_batch = cuda.to_gpu(np.asarray(t_length_batch).astype(np.int32))
 
-			except Exception as e:
-				printr("")
-				printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
-				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
-					batchsizes_train[bucket_id] -= 16
-					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
-					batchsizes_dev = [size * 3 for size in batchsizes_train]
-					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
-				else:
-					raise e
+						# print(xp.mean(x_batch, axis=3), xp.var(x_batch, axis=3))
+
+						# 誤差の計算
+						model.reset_state()
+						y_batch = model(x_batch)
+						loss = connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+
+						# NaN
+						loss_value = float(loss.data)
+						if loss_value != loss_value:
+							printc("Encountered NaN when computing loss.", color="red")
+							continue
+
+						# 更新
+						optimizer.update(lossfun=lambda: loss)
+						
+						sum_loss += loss_value
+
+				except Exception as e:
+					printr("")
+					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
+					if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
+						batchsizes_train[bucket_id] -= 16
+						batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
+						batchsizes_dev = [size * 3 for size in batchsizes_train]
+						print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
+						loader.set_batchsizes_train(batchsizes_train)
+						loader.set_batchsizes_dev(batchsizes_dev)
+						break	# 最初からやり直す
+
+			current_iteration += len(minibatch_list)
 
 		model.save(model_filename)
 		loader.save_stats(stats_directory)
@@ -254,6 +292,7 @@ def main():
 
 		# 学習率の減衰
 		decay_learning_rate(optimizer, env.lr_decay, env.final_learning_rate)
+
 
 if __name__ == "__main__":
 	main()
