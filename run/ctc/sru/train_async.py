@@ -14,7 +14,7 @@ from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer
 from asr.vocab import get_unigram_ids, ID_BLANK
 from asr.training import Environment, Iteration
 from asr.logging import Report
-from asr.loss import connectionist_temporal_classification
+from asr.loss import cuda_connectionist_temporal_classification
 
 
 def formatted_error(error_values):
@@ -168,7 +168,7 @@ def main():
 			try:
 				with chainer.using_config("train", True):
 					model.reset_state()
-					loss = connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
+					loss = cuda_connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
 			except Exception as e:
 				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
 					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id] - 16, 4)
@@ -223,7 +223,7 @@ def main():
 						# 誤差の計算
 						model.reset_state()
 						y_batch = model(x_batch)
-						loss = connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+						loss = cuda_connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
 						# NaN
 						loss_value = float(loss.data)
@@ -247,6 +247,7 @@ def main():
 						loader.set_batchsizes_train(batchsizes_train)
 						loader.set_batchsizes_dev(batchsizes_dev)
 						break	# 最初からやり直す
+					raise e
 
 			current_iteration += len(minibatch_list)
 

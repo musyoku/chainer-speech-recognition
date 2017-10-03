@@ -40,24 +40,17 @@ class Model(AcousticModel):
 				nn.Convolution2D(ndim_audio_features, ndim_conv * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1)),
 				lambda x: x[..., :-pad],
 				nn.Maxout(2),
-				nn.LayerNormalization(),
+				nn.Dropout(dropout),
 				nn.MaxPooling2D(ksize=(3, 1)),
+			)
+			conv_blocks.add(
+				nn.Convolution2D(ndim_conv, ndim_conv * 2, (kernel_size[0], 1), stride=1, pad=(1, 0)),
+				nn.Maxout(2),
 				nn.Dropout(dropout),
 			)
 			conv_blocks.add(
-				nn.Convolution2D(ndim_conv, ndim_conv * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1)),
-				lambda x: x[..., :-pad],
+				nn.Convolution2D(ndim_conv, ndim_conv * 2, (kernel_size[0], 1), stride=1, pad=(1, 0)),
 				nn.Maxout(2),
-				nn.LayerNormalization(),
-				nn.MaxPooling2D(ksize=(2, 1)),
-				nn.Dropout(dropout),
-			)
-			conv_blocks.add(
-				nn.Convolution2D(ndim_conv, ndim_rnn * 2, kernel_size, stride=1, pad=(0, kernel_size[1] - 1)),
-				lambda x: x[..., :-pad],
-				nn.Maxout(2),
-				nn.LayerNormalization(),
-				nn.MaxPooling2D(ksize=(2, 1)),
 				nn.Dropout(dropout),
 			)
 			self.conv_blocks = conv_blocks
@@ -74,15 +67,15 @@ class Model(AcousticModel):
 			# dense layers
 			dense_blocks = nn.Module()
 			dense_blocks.add(
-				nn.Convolution1D(None, ndim_dense * 2),
-				nn.Maxout(2),
-				nn.LayerNormalization(),
+				nn.Convolution1D(None, ndim_dense),
+				nn.ELU(),
+				# nn.LayerNormalization(),
 				nn.Dropout(dropout),
 			)
 			dense_blocks.add(
-				nn.Convolution1D(ndim_dense, ndim_dense * 2),
-				nn.Maxout(2),
-				nn.LayerNormalization(),
+				nn.Convolution1D(ndim_dense, ndim_dense),
+				nn.ELU(),
+				# nn.LayerNormalization(),
 				nn.Dropout(dropout),
 			)
 			dense_blocks.add(
