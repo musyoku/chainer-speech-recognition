@@ -109,7 +109,7 @@ class Model(AcousticModel):
 		# np.set_printoptions(suppress=True)
 		# print(out_data)
 
-		# fc
+		# dense
 		out_data = self.dense_blocks(out_data)
 		assert out_data.shape[2] == seq_length
 

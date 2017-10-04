@@ -4,7 +4,7 @@ import numpy as np
 import chainer.functions as F
 from chainer import cuda
 from args import args
-from model import build_model
+from model import Model
 from asr.model.cnn import configure
 from asr.error import compute_minibatch_error
 from asr.data import AugmentationOption
@@ -14,6 +14,7 @@ from asr.optimizers import get_learning_rate, decay_learning_rate, get_optimizer
 from asr.vocab import get_unigram_ids, ID_BLANK
 from asr.training import Environment, Iteration
 from asr.logging import Report
+from asr.loss import cuda_connectionist_temporal_classification
 
 def formatted_error(error_values):
 	errors = []
@@ -102,7 +103,7 @@ def main():
 		augmentation.add_noise = True
 
 	# モデル
-	model = build_model(config)
+	model = Model(config)
 	model.load(model_filename)
 
 	if args.gpu_device >= 0:
@@ -159,11 +160,13 @@ def main():
 		for x_batch, x_length_batch, t_batch, t_length_batch, bigram_batch, bucket_id in batch_iter_train:
 			try:
 				with chainer.using_config("train", True):
-					loss = F.connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
+					loss = cuda_connectionist_temporal_classification(model(x_batch), t_batch, ID_BLANK, x_length_batch, t_length_batch)
 			except Exception as e:
 				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
 					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id] - 16, 4)
 					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
+				else:
+					raise e
 			break
 	batchsizes_dev = [size * 3 for size in batchsizes_train]
 
@@ -188,7 +191,7 @@ def main():
 
 					# 誤差の計算
 					y_batch = model(x_batch)
-					loss = F.connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
+					loss = cuda_connectionist_temporal_classification(y_batch, t_batch, ID_BLANK, x_length_batch, t_length_batch)
 
 					# NaN
 					loss_value = float(loss.data)
@@ -202,13 +205,15 @@ def main():
 					sum_loss += loss_value
 
 			except Exception as e:
-				printr("")
-				printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
 				if isinstance(e, cupy.cuda.runtime.CUDARuntimeError):
+					printr("")
+					printc("{} (bucket {})".format(str(e), bucket_id + 1), color="red")
 					batchsizes_train[bucket_id] -= 16
 					batchsizes_train[bucket_id] = max(batchsizes_train[bucket_id], 4)
 					batchsizes_dev = [size * 3 for size in batchsizes_train]
 					print("new batchsize {} for bucket {}".format(batchsizes_train[bucket_id], bucket_id + 1))
+				else:
+					raise e
 
 		model.save(model_filename)
 		loader.save_stats(stats_directory)

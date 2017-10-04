@@ -26,24 +26,6 @@ def configure():
 	return Configuration()
 		
 class AcousticModel(nn.Module):
-	def __call__(self, x, split_into_variables=True):
-		batchsize = x.shape[0]
-		seq_length = x.shape[3]
-
-		out_data = super(AcousticModel, self).__call__(x)
-		assert out_data.shape[3] == seq_length
-
-		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある
-		if split_into_variables:
-			out_data = F.swapaxes(out_data, 1, 3)
-			out_data = F.reshape(out_data, (batchsize, -1))
-			out_data = F.split_axis(out_data, seq_length, axis=1)
-		else:
-			out_data = F.swapaxes(out_data, 1, 3)
-			out_data = F.squeeze(out_data, axis=2)
-
-		return out_data
-
 	def save(self, filename):
 		tmp_filename = str(uuid.uuid4())
 		serializers.save_hdf5(tmp_filename, self)
