@@ -21,7 +21,7 @@ class Loader():
 			for x, length in zip(x_batch, x_length_batch):
 				self._update_stats_recursively(x[..., :length])
 			x_mean, x_std = self.get_mean_and_std()
-			x_batch = (x_batch - x_mean) / x_std
+			x_batch = (x_batch - x_mean) / (x_std + 1e-16)
 
 		if gpu:
 			x_batch = cuda.to_gpu(x_batch.astype(np.float32))
@@ -38,7 +38,7 @@ class Loader():
 	# 標本平均と不偏標準偏差を返す
 	def get_mean_and_std(self):
 		xp = cuda.get_array_module(self.stats_mean)
-		return self.stats_mean[None, ..., None], xp.sqrt(self.stats_nvar[None, ..., None] / (self.stats_total - 1))
+		return self.stats_mean[None, ..., None], xp.sqrt((self.stats_nvar[None, ..., None] + 1e-16) / (self.stats_total - 1))
 
 	def update_stats(self, iteration, batchsizes, augmentation=None):
 		# stack = None

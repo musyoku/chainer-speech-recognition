@@ -31,7 +31,7 @@ def plot_features(out_dir, signal, sampling_rate, filename, apply_cmn=False, glo
 	# data augmentation
 	# specgram = fft.augment_specgram(specgram)
 
-	logmel = fft.compute_logmel(specgram, sampling_rate, nfft=512, winlen=args.frame_width, winstep=args.frame_shift, nfilt=40, lowfreq=0, winfunc=lambda x:np.hanning(x))
+	logmel = fft.compute_logmel(specgram, sampling_rate, nfft=512, winlen=args.frame_width, winstep=args.frame_shift, nfilt=args.num_mel_filters, lowfreq=0, winfunc=lambda x:np.hanning(x))
 	logmel, delta, delta_delta = fft.compute_deltas(logmel)
 
 	if global_normalization:
@@ -82,21 +82,21 @@ def _plot_features(out_dir, signal, sampling_rate, logmel, delta, delta_delta, s
 	pylab.colorbar()
 	
 	ax3 = pylab.subplot(513)
-	pylab.pcolormesh(np.arange(0, logmel.shape[0]), np.arange(1, 41), logmel.T, cmap=pylab.get_cmap("jet"))
+	pylab.pcolormesh(np.arange(0, logmel.shape[0]), np.arange(1, args.num_mel_filters + 1), logmel.T, cmap=pylab.get_cmap("jet"))
 	pylab.title("Log mel filter bank features")
 	pylab.xlabel("Frame")
 	pylab.ylabel("Filter number")
 	pylab.colorbar()
 	
 	ax4 = pylab.subplot(514)
-	pylab.pcolormesh(np.arange(0, delta.shape[0]), np.arange(1, 41), delta.T, cmap=pylab.get_cmap("jet"))
+	pylab.pcolormesh(np.arange(0, delta.shape[0]), np.arange(1, args.num_mel_filters + 1), delta.T, cmap=pylab.get_cmap("jet"))
 	pylab.title("Deltas")
 	pylab.xlabel("Frame")
 	pylab.ylabel("Filter number")
 	pylab.colorbar()
 	
 	ax5 = pylab.subplot(515)
-	pylab.pcolormesh(np.arange(0, delta_delta.shape[0]), np.arange(1, 41), delta_delta.T, cmap=pylab.get_cmap("jet"))
+	pylab.pcolormesh(np.arange(0, delta_delta.shape[0]), np.arange(1, args.num_mel_filters + 1), delta_delta.T, cmap=pylab.get_cmap("jet"))
 	pylab.title("Delta-deltas")
 	pylab.xlabel("Frame")
 	pylab.ylabel("Filter number")
@@ -164,7 +164,7 @@ def main():
 	assert args.wav_filename
 	assert args.trn_filename
 	assert args.out_dir
-	assert args.stats_dir
+	# assert args.stats_dir
 
 	sampling_rate, features = split_audio(args.wav_filename, args.trn_filename)
 	for index, signal in enumerate(features):
@@ -182,5 +182,6 @@ if __name__ == "__main__":
 	parser.add_argument("--stats-dir", "-stats", type=str)
 	parser.add_argument("--frame-width", "-fwidth", type=float, default=0.032)
 	parser.add_argument("--frame-shift", "-fshift", type=float, default=0.01)
+	parser.add_argument("--num-mel-filters", "-nmel", type=int, default=40) 
 	args = parser.parse_args()
 	main()
