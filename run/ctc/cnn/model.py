@@ -97,19 +97,15 @@ class Model(AcousticModel):
 		batchsize = x.shape[0]
 		seq_length = x.shape[3]
 
-		print("call")
-		print(x.shape)
 		# conv
 		out_data = self.conv_blocks(x)
 		assert out_data.shape[3] == seq_length
-
-		print(out_data.shape)
 
 		# dense
 		out_data = self.dense_blocks(out_data)
 		assert out_data.shape[3] == seq_length
 
-		out_data /= 1000
+		   /= 1000
 
 		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある
 		if split_into_variables:
