@@ -105,23 +105,11 @@ class Model(AcousticModel):
 		out_data = self.dense_blocks(out_data)
 		assert out_data.shape[3] == seq_length
 
-		   /= 1000
-
 		# CTCでは同一時刻のRNN出力をまとめてVariableにする必要がある
 		if split_into_variables:
 			out_data = F.swapaxes(out_data, 1, 3)
 			out_data = F.reshape(out_data, (batchsize, -1))
 			out_data = F.split_axis(out_data, seq_length, axis=1)
-
-			for t in range(seq_length):
-				logit = out_data[t].data
-				xp = chainer.cuda.get_array_module(logit)
-				logit = xp.ascontiguousarray(logit)
-				distribution = F.softmax(logit).data
-				zeros = distribution[distribution == 0]
-				if zeros.size > 0:
-					print(logit)
-					print(distribution)
 		else:
 			out_data = F.swapaxes(out_data, 1, 3)
 			out_data = F.squeeze(out_data, axis=2)
